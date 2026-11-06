@@ -28,7 +28,11 @@ PRESETS = [
 
 RADAR_SYSTEM = """You turn news and job-post search results into a list of companies showing a buying signal.
 List only the company the signal is ABOUT (the one hiring, launching, migrating, appointing), never the
-publisher, a vendor quoted in passing, or an analyst firm. Skip results where no specific company is named."""
+publisher, a vendor quoted in passing, or an analyst firm. Skip results where no specific company is named.
+When the user names regions, they want companies whose activity is IN those regions. A company qualifies only if
+the signal itself happens there (the hiring, launch, office, appointment is located there) or, when the source
+gives no location for the signal, the company is headquartered there. A global company's news from another
+country does not qualify. If you can't tell where it happens, leave it out."""
 
 
 def _existing_accounts() -> dict[str, int]:
@@ -43,19 +47,22 @@ def signal_radar(preset: str | None, query: str | None, region=None, days: int =
     if not base:
         raise ValueError("Pick a signal or type what to look for")
     places = locations.clean(region)
-    region = ", ".join(places)
+    region = locations.describe(places)
+    allowed = locations.allowed_countries(places)
     results = []
     if not places:
         results += tavily.raw_search(base, topic="news", days=days, max_results=20)
         results += tavily.raw_search(base, topic="general", days=None, max_results=10)
     else:
-        # One search per place so a small market isn't drowned out by a big one.
+        # One search per place so a small market isn't drowned out by a big one; news pinned to the place
+        # by name, web search also boosted to that country.
         picked = places[:5]
         per = max(6, 20 // len(picked))
         for place in picked:
-            q = f"{base} {place}"
+            q = f"{base} in {place}"
             results += tavily.raw_search(q, topic="news", days=days, max_results=per)
-            results += tavily.raw_search(q, topic="general", days=None, max_results=max(4, per // 2))
+            results += tavily.raw_search(q, topic="general", days=None, max_results=max(4, per // 2),
+                                         country=locations.tavily_country(place))
     seen, docs = set(), []
     for r in results:
         if r["url"] not in seen:
@@ -69,16 +76,35 @@ def signal_radar(preset: str | None, query: str | None, region=None, days: int =
         for i, d in enumerate(docs)
     )
     signal_name = p["label"] if p else base
+    where = (f"""Regions: {region}
+Only companies whose signal happens in these regions (see the rules). For each, say where it happens.""" if places else "")
     prompt = f"""Signal we are looking for: {signal_name}
-{f'Only include companies with operations in: {region}' if region else ''}
+{where}
 
 Search results:
 {listing}
 
 Return {{"companies": [{{"company": official company name, "domain": website domain or null,
-"country": country or null, "signal": one sentence on what this company is doing, with a concrete fact,
+"country": the company's headquarters country or null,
+"location": where this signal happens, "City, Country" (or just the country) as stated in the source, or null,
+"signal_country": the country of that location in plain English (e.g. India, United Arab Emirates, United States), or null,
+"in_region": true only if the signal happens in the regions above (or no regions were given),
+"signal": one sentence on what this company is doing, with a concrete fact,
 "source": result number}}]}}. One entry per company; most relevant first; at most 25."""
-    out = llm.complete_json(RADAR_SYSTEM, prompt, 3000).get("companies", [])
+    out = llm.complete_json(RADAR_SYSTEM, prompt, 3500).get("companies", [])
+    if places:
+        kept = []
+        for c in out:
+            if c.get("in_region") is False:
+                continue
+            if allowed:
+                # where the signal happens, else the head office: must be one of the chosen countries
+                where_c = locations.country_name(c.get("signal_country")) or locations.country_name(
+                    (c.get("location") or "").split(",")[-1]) or locations.country_name(c.get("country"))
+                if not where_c or where_c not in allowed:
+                    continue
+            kept.append(c)
+        out = kept
     existing = _existing_accounts()
     rows, names = [], set()
     for c in out:
@@ -91,6 +117,7 @@ Return {{"companies": [{{"company": official company name, "domain": website dom
             "name": name,
             "domain": c.get("domain"),
             "country": c.get("country"),
+            "location": c.get("location"),
             "signal": c.get("signal", ""),
             "source_url": src.get("url"),
             "source_title": src.get("title"),

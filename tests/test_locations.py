@@ -38,3 +38,24 @@ def test_browse_passes_expanded_locations(monkeypatch):
                         lambda **k: seen.update(k) or {"companies": []})
     discover.browse("fintech", ["DACH", "Pune"], None, 1)
     assert seen["locations"] == ["Germany", "Austria", "Switzerland", "Pune"]
+
+
+def test_radar_keeps_only_chosen_regions(monkeypatch):
+    calls = []
+    def fake_search(q, **k):
+        calls.append(k.get("country"))
+        return [{"url": f"https://news.example/{len(calls)}", "title": "t", "text": "x", "published_at": None}]
+    monkeypatch.setattr(discover.tavily, "raw_search", fake_search)
+    monkeypatch.setattr(discover.llm, "complete_json", lambda system, prompt, n: {"companies": [
+        {"company": "Infosys", "country": "India", "location": "Pune, India", "signal_country": "India", "in_region": True, "signal": "s", "source": 0},
+        {"company": "Emirates NBD", "country": "UAE", "location": "Dubai", "signal_country": "UAE", "in_region": True, "signal": "s", "source": 0},
+        {"company": "Acme US", "country": "United States", "location": "Austin, US", "signal_country": "United States", "in_region": True, "signal": "s", "source": 0},
+        {"company": "GlobalCo", "country": "India", "location": "London, UK", "signal_country": "United Kingdom", "in_region": False, "signal": "s", "source": 0},
+        {"company": "Nowhere Ltd", "country": None, "location": None, "signal_country": None, "in_region": True, "signal": "s", "source": 0},
+    ]})
+    rows = discover.signal_radar("qa_hiring", None, ["India", "GCC"], 30)
+    assert [r["name"] for r in rows] == ["Infosys", "Emirates NBD"]
+    assert rows[0]["location"] == "Pune, India"
+    assert "india" in calls            # web search boosted to India; regions (GCC) get no single-country boost
+    # no regions chosen: nothing is filtered
+    assert len(discover.signal_radar("qa_hiring", None, [], 30)) == 5

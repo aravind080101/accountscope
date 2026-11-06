@@ -65,7 +65,7 @@ export default function DiscoverPage({ refresh }: any) {
           <div className="mt-5">
             {scanning ? <div className="flex flex-col items-center gap-2 py-16 text-muted"><Loader2 className="size-5 animate-spin text-saffron" />Reading recent news and job posts…</div>
               : hits === null ? <Empty icon={<Radar />} title="Pick a signal and scan">You'll get real companies showing it right now, each with a one-line reason and its source.</Empty>
-              : !hits.length ? <Empty title="No companies found for that signal">Try a wider region, a longer window, or describe the signal in your own words.</Empty>
+              : !hits.length ? <Empty title="No companies found for that signal">{region.length ? "Only companies whose activity is in your chosen regions are shown. " : ""}Try a wider region, a longer window, or describe the signal in your own words.</Empty>
               : (
                 <div className="overflow-hidden rounded-lg border border-line bg-white">
                   <div className="flex items-center justify-between border-b border-line px-4 py-2.5 text-[13px]"><b>{hits.length} companies showing this signal</b>
@@ -74,7 +74,7 @@ export default function DiscoverPage({ refresh }: any) {
                     <tbody>{hits.map((h) => (
                       <Tr key={h.name}>
                         <Td className="pl-4"><Checkbox checked={!!picked[h.name]} disabled={!!h.account_id} onCheckedChange={() => toggle(h)} /></Td>
-                        <Td><div className="flex items-center gap-2.5"><Avatar name={h.name} size={26} square /><div><div className="font-medium">{h.name}</div><div className="text-[12px] text-faint">{[h.country, h.domain].filter(Boolean).join(" · ")}</div></div></div></Td>
+                        <Td><div className="flex items-center gap-2.5"><Avatar name={h.name} size={26} square /><div><div className="font-medium">{h.name}</div><div className="text-[12px] text-faint">{[h.location || h.country, h.domain].filter(Boolean).join(" · ")}</div></div></div></Td>
                         <Td className="max-w-[460px]">{h.signal}</Td>
                         <Td className="max-w-[220px] text-[12px]">{h.source_url && <a className="inline-flex items-center gap-1 text-muted hover:text-fg" href={h.source_url} target="_blank" rel="noreferrer"><span className="line-clamp-1">{h.source_title || "Source"}</span><ExternalLink className="size-3 shrink-0" /></a>}<div className="text-faint">{h.published_at}</div></Td>
                         <Td className="pr-4">{h.account_id && <Button variant="ghost" size="xs" onClick={() => go(`/a/${h.account_id}`)}>Researched</Button>}</Td>

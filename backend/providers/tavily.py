@@ -51,8 +51,10 @@ def _post(body: dict) -> list[dict]:
 
 
 def raw_search(query: str, topic: str = "general", days: int | None = None, max_results: int = 10,
-               include_domains: list[str] | None = None, full_text: bool = False) -> list[dict]:
-    """One Tavily query. Returns [{url, title, published_at, text}]."""
+               include_domains: list[str] | None = None, full_text: bool = False,
+               country: str | None = None) -> list[dict]:
+    """One Tavily query. Returns [{url, title, published_at, text}].
+    country (lowercase English name) boosts results from that country; Tavily only supports it for general search."""
     body = {"query": query, "search_depth": "advanced", "max_results": max_results,
             "include_raw_content": bool(full_text)}
     if topic == "news":
@@ -61,8 +63,11 @@ def raw_search(query: str, topic: str = "general", days: int | None = None, max_
             body["days"] = days
     if include_domains:
         body["include_domains"] = include_domains
+    results = None
+    if country and topic != "news":
+        results = _post({**body, "country": country}) or None   # unknown country name → retry without it
     out = []
-    for r in _post(body):
+    for r in (results if results is not None else _post(body)):
         if not r.get("url"):
             continue
         text = (r.get("raw_content") if full_text else None) or r.get("content") or ""

@@ -172,7 +172,7 @@ def test_provider_preference(monkeypatch):
 def test_signal_radar(connected, monkeypatch):
     from backend import discover
 
-    monkeypatch.setattr(tavily, "raw_search", lambda q, topic="general", days=None, max_results=10: [
+    monkeypatch.setattr(tavily, "raw_search", lambda q, topic="general", days=None, max_results=10, **k: [
         {"url": "https://news.test/a", "title": "Acme hires 40 SDETs", "published_at": "2026-10-30", "text": "Acme is hiring 40 SDETs."},
         {"url": "https://news.test/a", "title": "dup", "published_at": None, "text": "dup"},
         {"url": "https://news.test/b", "title": "Example Bank QA push", "published_at": "2026-10-28", "text": "Example Bank QA team grows."},
@@ -180,7 +180,8 @@ def test_signal_radar(connected, monkeypatch):
     monkeypatch.setattr(discover.llm, "complete_json", lambda *a, **k: {"companies": [
         {"company": "Acme", "domain": "acme.test", "country": "India", "signal": "Hiring 40 SDETs.", "source": 0},
         {"company": "acme", "signal": "duplicate", "source": 0},
-        {"company": "Example Bank", "signal": "Growing QA team.", "source": 1},
+        {"company": "Example Bank", "country": "India", "location": "Chennai, India", "signal": "Growing QA team.", "source": 1},
+        {"company": "Faraway Inc", "country": "United States", "signal_country": "United States", "signal": "Hiring in Ohio.", "source": 1},
     ]})
     r = client.post("/api/discover/signals", json={"preset": "qa_hiring", "region": "India", "days": 30}).json()
     names = [c["name"] for c in r["companies"]]

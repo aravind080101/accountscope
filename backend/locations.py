@@ -96,50 +96,55 @@ REGIONS: dict[str, list[str]] = {
     "Central Asia": _CENTRAL_ASIA,
 }
 
-STATES = [
-    # India
-    "Andhra Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh", "Delhi NCR", "Goa", "Gujarat", "Haryana",
-    "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra",
-    "Odisha", "Puducherry", "Punjab", "Rajasthan", "Tamil Nadu", "Telangana", "Uttar Pradesh", "Uttarakhand",
-    "West Bengal",
-    # United States
-    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", "Florida",
-    "Georgia (US)", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine",
-    "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska",
-    "Nevada", "New Hampshire", "New Jersey", "New Mexico", "New York State", "North Carolina", "North Dakota",
-    "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee",
-    "Texas", "Utah", "Vermont", "Virginia", "Washington State", "West Virginia", "Wisconsin", "Wyoming",
-    # Canada, Australia
-    "Ontario", "Quebec", "British Columbia", "Alberta", "New South Wales", "Victoria", "Queensland",
-    "Western Australia",
-]
+STATES_BY_COUNTRY = {
+    "India": ["Andhra Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh", "Delhi NCR", "Goa", "Gujarat", "Haryana",
+              "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh",
+              "Maharashtra", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Tamil Nadu", "Telangana", "Uttar Pradesh",
+              "Uttarakhand", "West Bengal"],
+    "United States": ["Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware",
+                      "Florida", "Georgia (US)", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky",
+                      "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi",
+                      "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", "New Mexico",
+                      "New York State", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania",
+                      "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont",
+                      "Virginia", "Washington State", "West Virginia", "Wisconsin", "Wyoming"],
+    "Canada": ["Ontario", "Quebec", "British Columbia", "Alberta"],
+    "Australia": ["New South Wales", "Victoria", "Queensland", "Western Australia"],
+}
 
-CITIES = [
-    # India
-    "Bengaluru", "Mumbai", "Delhi", "Gurugram", "Noida", "Hyderabad", "Chennai", "Pune", "Kolkata", "Ahmedabad",
-    "Kochi", "Coimbatore", "Thiruvananthapuram", "Jaipur", "Chandigarh", "Indore", "Mysuru", "Visakhapatnam",
-    "Bhubaneswar", "Nagpur", "Vadodara", "Mangaluru", "Madurai", "Lucknow", "GIFT City",
-    # Middle East
-    "Dubai", "Abu Dhabi", "Sharjah", "Riyadh", "Jeddah", "Dammam", "Doha", "Kuwait City", "Muscat", "Manama",
-    "Tel Aviv", "Amman", "Istanbul", "Cairo",
-    # Asia Pacific
-    "Singapore", "Kuala Lumpur", "Jakarta", "Bangkok", "Manila", "Ho Chi Minh City", "Hanoi", "Hong Kong",
-    "Shanghai", "Beijing", "Shenzhen", "Taipei", "Tokyo", "Osaka", "Seoul", "Sydney", "Melbourne", "Brisbane",
-    "Perth", "Auckland", "Colombo", "Dhaka", "Karachi", "Lahore", "Kathmandu",
-    # Europe
-    "London", "Manchester", "Edinburgh", "Dublin", "Amsterdam", "Rotterdam", "Brussels", "Paris", "Lyon",
-    "Berlin", "Munich", "Frankfurt", "Hamburg", "Zurich", "Geneva", "Vienna", "Stockholm", "Copenhagen", "Oslo",
-    "Helsinki", "Madrid", "Barcelona", "Lisbon", "Milan", "Rome", "Warsaw", "Krakow", "Prague", "Budapest",
-    "Bucharest", "Sofia", "Tallinn", "Vilnius", "Riga", "Kyiv", "Luxembourg City",
-    # North America
-    "New York", "San Francisco", "San Jose", "Seattle", "Austin", "Dallas", "Houston", "Boston", "Chicago",
-    "Atlanta", "Los Angeles", "San Diego", "Denver", "Miami", "Washington DC", "Raleigh", "Charlotte",
-    "Phoenix", "Philadelphia", "Minneapolis", "Detroit", "Toronto", "Vancouver", "Montreal", "Ottawa",
-    "Calgary",
-    # Latin America, Africa
-    "Mexico City", "Guadalajara", "Monterrey", "Sao Paulo", "Rio de Janeiro", "Buenos Aires", "Santiago",
-    "Bogota", "Medellin", "Lima", "Johannesburg", "Cape Town", "Nairobi", "Lagos", "Casablanca", "Kigali",
-]
+CITIES_BY_COUNTRY = {
+    "India": ["Bengaluru", "Mumbai", "Delhi", "Gurugram", "Noida", "Hyderabad", "Chennai", "Pune", "Kolkata", "Ahmedabad",
+              "Kochi", "Coimbatore", "Thiruvananthapuram", "Jaipur", "Chandigarh", "Indore", "Mysuru", "Visakhapatnam",
+              "Bhubaneswar", "Nagpur", "Vadodara", "Mangaluru", "Madurai", "Lucknow", "GIFT City"],
+    "United Arab Emirates": ["Dubai", "Abu Dhabi", "Sharjah"],
+    "Saudi Arabia": ["Riyadh", "Jeddah", "Dammam"],
+    "Qatar": ["Doha"], "Kuwait": ["Kuwait City"], "Oman": ["Muscat"], "Bahrain": ["Manama"], "Israel": ["Tel Aviv"],
+    "Jordan": ["Amman"], "Turkey": ["Istanbul"], "Egypt": ["Cairo"],
+    "Singapore": ["Singapore"], "Malaysia": ["Kuala Lumpur"], "Indonesia": ["Jakarta"], "Thailand": ["Bangkok"],
+    "Philippines": ["Manila"], "Vietnam": ["Ho Chi Minh City", "Hanoi"], "Hong Kong": ["Hong Kong"],
+    "China": ["Shanghai", "Beijing", "Shenzhen"], "Taiwan": ["Taipei"], "Japan": ["Tokyo", "Osaka"],
+    "South Korea": ["Seoul"], "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth"], "New Zealand": ["Auckland"],
+    "Sri Lanka": ["Colombo"], "Bangladesh": ["Dhaka"], "Pakistan": ["Karachi", "Lahore"], "Nepal": ["Kathmandu"],
+    "United Kingdom": ["London", "Manchester", "Edinburgh"], "Ireland": ["Dublin"],
+    "Netherlands": ["Amsterdam", "Rotterdam"], "Belgium": ["Brussels"], "France": ["Paris", "Lyon"],
+    "Germany": ["Berlin", "Munich", "Frankfurt", "Hamburg"], "Switzerland": ["Zurich", "Geneva"], "Austria": ["Vienna"],
+    "Sweden": ["Stockholm"], "Denmark": ["Copenhagen"], "Norway": ["Oslo"], "Finland": ["Helsinki"],
+    "Spain": ["Madrid", "Barcelona"], "Portugal": ["Lisbon"], "Italy": ["Milan", "Rome"],
+    "Poland": ["Warsaw", "Krakow"], "Czech Republic": ["Prague"], "Hungary": ["Budapest"], "Romania": ["Bucharest"],
+    "Bulgaria": ["Sofia"], "Estonia": ["Tallinn"], "Lithuania": ["Vilnius"], "Latvia": ["Riga"], "Ukraine": ["Kyiv"],
+    "Luxembourg": ["Luxembourg City"],
+    "United States": ["New York", "San Francisco", "San Jose", "Seattle", "Austin", "Dallas", "Houston", "Boston",
+                      "Chicago", "Atlanta", "Los Angeles", "San Diego", "Denver", "Miami", "Washington DC", "Raleigh",
+                      "Charlotte", "Phoenix", "Philadelphia", "Minneapolis", "Detroit"],
+    "Canada": ["Toronto", "Vancouver", "Montreal", "Ottawa", "Calgary"],
+    "Mexico": ["Mexico City", "Guadalajara", "Monterrey"], "Brazil": ["Sao Paulo", "Rio de Janeiro"],
+    "Argentina": ["Buenos Aires"], "Chile": ["Santiago"], "Colombia": ["Bogota", "Medellin"], "Peru": ["Lima"],
+    "South Africa": ["Johannesburg", "Cape Town"], "Kenya": ["Nairobi"], "Nigeria": ["Lagos"],
+    "Morocco": ["Casablanca"], "Rwanda": ["Kigali"],
+}
+
+STATES = [x for v in STATES_BY_COUNTRY.values() for x in v]
+CITIES = list(dict.fromkeys(x for v in CITIES_BY_COUNTRY.values() for x in v))
 
 WORLDWIDE = {"", "any", "global", "worldwide", "all", "anywhere"}
 
@@ -190,3 +195,66 @@ def for_search(values) -> str:
     """Text to add to a news/web search, e.g. 'India OR GCC OR Singapore'."""
     vals = clean(values)
     return " OR ".join(f'"{v}"' if " " in v else v for v in vals[:6])
+
+
+# ------------------------------------------------------------------ keeping results inside the chosen places
+
+_COUNTRY_KEYS = {c.lower(): c for c in COUNTRIES}
+_ALIASES = {"uae": "United Arab Emirates", "u.a.e.": "United Arab Emirates", "emirates": "United Arab Emirates",
+            "usa": "United States", "us": "United States", "u.s.": "United States", "united states of america": "United States",
+            "america": "United States", "uk": "United Kingdom", "u.k.": "United Kingdom", "england": "United Kingdom",
+            "scotland": "United Kingdom", "wales": "United Kingdom", "great britain": "United Kingdom", "britain": "United Kingdom",
+            "ksa": "Saudi Arabia", "korea": "South Korea", "republic of korea": "South Korea", "czechia": "Czech Republic",
+            "holland": "Netherlands", "the netherlands": "Netherlands", "turkiye": "Turkey", "türkiye": "Turkey",
+            "bharat": "India", "russian federation": "Russia", "viet nam": "Vietnam"}
+_PLACE_COUNTRY = {**{x.lower(): c for c, xs in STATES_BY_COUNTRY.items() for x in xs},
+                  **{x.lower(): c for c, xs in CITIES_BY_COUNTRY.items() for x in xs}}
+
+
+def country_name(text: str | None) -> str | None:
+    """'UAE', 'Dubai', 'united states' → the country's name in COUNTRIES; None if unknown."""
+    t = (text or "").strip().lower().rstrip(".")
+    if not t:
+        return None
+    if t in _COUNTRY_KEYS:
+        return _COUNTRY_KEYS[t]
+    if t in _ALIASES:
+        return _ALIASES[t]
+    return _PLACE_COUNTRY.get(t)
+
+
+def allowed_countries(values) -> set[str] | None:
+    """Every country the chosen places cover, or None when one of them isn't a place we know (be lenient)."""
+    out: set[str] = set()
+    for v in clean(values):
+        key = _REGION_KEYS.get(v.lower())
+        if key:
+            out.update(REGIONS[key])
+            continue
+        c = country_name(v)
+        if not c:
+            return None
+        out.add(c)
+    return out or None
+
+
+def describe(values) -> str:
+    """'India; GCC (United Arab Emirates, Saudi Arabia, …)' for the prompt."""
+    parts = []
+    for v in clean(values):
+        key = _REGION_KEYS.get(v.lower())
+        if key:
+            parts.append(f"{key} ({', '.join(REGIONS[key])})")
+        elif country_name(v) and country_name(v) != v and v.lower() not in _ALIASES:
+            parts.append(f"{v}, {country_name(v)}")
+        else:
+            parts.append(v)
+    return "; ".join(parts)
+
+
+def tavily_country(value: str) -> str | None:
+    """Single-country places get Tavily's country boost (lowercase English name)."""
+    if _REGION_KEYS.get(value.lower()):
+        return None
+    c = country_name(value)
+    return c.lower() if c else None
