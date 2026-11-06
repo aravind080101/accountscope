@@ -13,6 +13,7 @@ import { Avatar, Empty, FitPill, Menu, MenuContent, MenuItem, MenuTrigger, Meter
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { PitchSheet } from "@/components/PitchSheet";
+import { confirmCost } from "@/components/CostConfirm";
 import { BriefSheet } from "@/components/BriefSheet";
 
 const RUN_STEPS = ["Reading sources", "Finding initiatives", "Mapping people", "Done"];
@@ -59,7 +60,7 @@ export default function CompanyPage({ id, tab, refresh, health }: any) {
               </Button>
             </Tooltip>
             <Tooltip content="The agent writes pitches for the top 5 contacts on strong-fit initiatives and projects">
-              <Button variant="outline" size="sm" disabled={busy} onClick={() => act(async () => { const r = await post(`/api/accounts/${id}/pitches`, { limit: 5, min_fit: 0.5 }); toast.success(`Writing ${r.queued} pitches. Follow them in Outreach.`); go("/outreach"); })}><Wand2 />Write pitches</Button>
+              <Button variant="outline" size="sm" disabled={busy} onClick={async () => { if (!(await confirmCost(`/api/accounts/${id}/pitches/cost?limit=5&min_fit=0.5`, "Write pitches for this account's top contacts?", "Write pitches"))) return; act(async () => { const r = await post(`/api/accounts/${id}/pitches`, { limit: 5, min_fit: 0.5 }); toast.success(`Writing ${r.queued} pitches. Follow them in Outreach.`); go("/outreach"); }); }}><Wand2 />Write pitches</Button>
             </Tooltip>
             <Button variant="outline" size="sm" disabled={busy} onClick={() => act(() => post(`/api/accounts/${id}/refresh?force=true`))}>
               {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}{busy ? "Researching" : "Research again"}
@@ -271,7 +272,9 @@ function InitiativeCard({ i, open, toggle, act, onBrief }: any) {
 function ContactRow({ p, act, onBrief, base = "/api/contacts" }: any) {
   const masked = p.full_name.includes("*") && !p.email;
   const [busy, setBusy] = useState(false);
-  const enrich = async () => { setBusy(true); await act(() => post(`/api/people/${p.person_id}/enrich`), "Contact revealed"); setBusy(false); };
+  const enrich = async () => {
+    if (!(await confirmCost(`/api/people/${p.person_id}/cost?action=enrich`, `Get ${p.full_name}'s email?`, "Get email"))) return;
+    setBusy(true); await act(() => post(`/api/people/${p.person_id}/enrich`), "Contact revealed"); setBusy(false); };
   return (
     <Tr>
       <Td className="pl-3">

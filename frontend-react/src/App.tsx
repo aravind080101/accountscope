@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Toaster, toast } from "sonner";
+import { CostConfirmHost } from "@/components/CostConfirm";
 import { Send, Bell, Building, Building2, ChevronsUpDown, Command as CmdIcon, Compass, KeyRound, Loader2, LogOut, Plus, Radar, Search, Settings2, Sparkles, Users } from "lucide-react";
 import { api, post } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -109,6 +110,7 @@ function Workspace({ me, onAuthChange, onSignOut }: { me: any; onAuthChange: () 
       <SellerDialog open={settingsOpen} onOpenChange={setSettingsOpen} onSaved={refresh} />
       <PasswordDialog open={pwOpen} onOpenChange={setPwOpen} />
       <Toaster position="bottom-right" toastOptions={{ className: "!text-[13px]" }} />
+      <CostConfirmHost />
     </TooltipProvider>
   );
 }

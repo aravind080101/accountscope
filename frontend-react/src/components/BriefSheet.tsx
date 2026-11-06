@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ClipboardPaste, Loader2, MessageCircle, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import * as D from "@radix-ui/react-dialog";
 import { api, post } from "@/lib/api";
+import { confirmCost } from "@/components/CostConfirm";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SheetContent } from "@/components/ui/dialog";
@@ -11,16 +12,17 @@ import { Select, Textarea } from "@/components/ui/input";
 const STYLE: Record<string, string> = { "data-driven": "Data-driven", visionary: "Visionary", pragmatic: "Pragmatic", technical: "Technical", "relationship-led": "Relationship-led", unknown: "Not enough to tell" };
 
 export function BriefSheet({ person, onClose, onBuilt }: { person: any; onClose: () => void; onBuilt?: () => void }) {
-  const [b, setB] = useState<any>(null); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  const [b, setB] = useState<any>(null); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false); const [none, setNone] = useState(false);
   const pid = person?.person_id;
   const build = async (force = false) => {
-    setBusy(true); setErr("");
+    if (!(await confirmCost(`/api/people/${pid}/cost?action=brief${force ? "&force=true" : ""}`, `${b ? "Refresh" : "Build"} ${person.full_name}'s buyer brief?`, b ? "Refresh brief" : "Build brief"))) return;
+    setBusy(true); setErr(""); setNone(false);
     try { setB(await post(`/api/people/${pid}/brief${force ? "?force=true" : ""}`)); onBuilt?.(); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
   useEffect(() => {
     if (!pid) return;
-    setB(null); setErr("");
-    api(`/api/people/${pid}/brief`).then(setB).catch(() => build());
+    setB(null); setErr(""); setNone(false);
+    api(`/api/people/${pid}/brief`).then(setB).catch(() => setNone(true));
   }, [pid]); // eslint-disable-line
 
   const src = (n: number) => b?.sources?.find((s: any) => s.n === n);
@@ -37,6 +39,12 @@ export function BriefSheet({ person, onClose, onBuilt }: { person: any; onClose:
     <D.Root open={!!person} onOpenChange={(v) => !v && onClose()}>
       {person && (
         <SheetContent title={<span className="flex items-center gap-2.5"><Avatar name={person.full_name} size={28} />{person.full_name}</span>} description={person.title}>
+          {none && !busy && !b && (
+            <div className="flex flex-col items-center gap-3 py-14 text-center">
+              <Sparkles className="size-6 text-sponsor" />
+              <p className="max-w-sm text-[13px] text-muted">The brief reads what this person has said in talks, podcasts, interviews and posts: what drives them, what worries them and how they talk.</p>
+              <Button onClick={() => build()}><Sparkles />Build brief</Button>
+            </div>)}
           {busy && !b && <div className="flex flex-col items-center gap-2 py-16 text-muted"><Loader2 className="size-5 animate-spin text-saffron" />Reading what they've said publicly…</div>}
           {err && <div className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] text-danger">{err}</div>}
           {b && (

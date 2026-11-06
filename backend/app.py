@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import alerts, auth, buyers, config, db, discover, feedback, guard, llm, orgchart, pipeline, pitch, profiles, projects, tenancy
+from . import alerts, auth, buyers, config, costs, db, discover, feedback, guard, llm, orgchart, pipeline, pitch, profiles, projects, tenancy
 from .providers import apollo
 from .taxonomy import CATEGORIES
 
@@ -723,6 +723,25 @@ def pitch_account(cid: int, body: BulkPitchIn, background: BackgroundTasks):
     ids = [pitch.create(p) for p in people]
     background.add_task(pitch.run_queue, ids)
     return {"queued": len(ids), "pitch_ids": ids}
+
+
+@app.get("/api/people/{pid}/cost")
+def person_cost(pid: int, action: str, force: bool = False):
+    """What enrich / brief / pitch will spend for this person, shown before the user confirms."""
+    guard.person(pid)
+    if action == "enrich":
+        return costs.enrich(pid)
+    if action == "brief":
+        return costs.brief(pid, force)
+    if action == "pitch":
+        return costs.pitches([pid])
+    raise HTTPException(400, "action must be enrich, brief or pitch")
+
+
+@app.get("/api/accounts/{cid}/pitches/cost")
+def pitch_account_cost(cid: int, limit: int = 5, min_fit: float = 0.5):
+    guard.company(cid)
+    return costs.pitches(pitch.top_contacts(cid, max(1, min(limit, 25)), min_fit))
 
 
 @app.get("/api/pitches.csv")

@@ -95,8 +95,8 @@ SOURCE_FAMILIES = [
 ]
 
 
-def gather(name: str, company: str, title: str, domain: str | None = None) -> list[dict]:
-    """Public pages by or about this person, from many kinds of source, each tagged with its family and voice value."""
+def search_plan(name: str, company: str, title: str, domain: str | None = None) -> list[tuple]:
+    """The web searches a brief runs for this person (also used to estimate its cost)."""
     aliases = company_aliases(company, title)
     short = company.split()[0] if company else ""
     queries = [(fam, voice, tpl.format(name=name, short=short), opts) for fam, voice, tpl, opts in SOURCE_FAMILIES]
@@ -104,6 +104,20 @@ def gather(name: str, company: str, title: str, domain: str | None = None) -> li
         queries.append(("company_site", "written", f'"{name}"', {"include_domains": [domain]}))
     for a in [x for x in aliases[1:] if " " in x][:2]:  # specific units named in their title
         queries.append(("profile", "bio", f'"{name}" "{a}"', {}))
+    return queries
+
+
+def needs_rebuild(person_id: int, force: bool = False) -> bool:
+    """Would build() search the web again (rather than reuse the saved brief)?"""
+    existing = get(person_id)
+    return bool(force or not existing or not _fresh(existing["created_at"])
+                or existing.get("samples_used", 0) != len(samples(person_id)))
+
+
+def gather(name: str, company: str, title: str, domain: str | None = None) -> list[dict]:
+    """Public pages by or about this person, from many kinds of source, each tagged with its family and voice value."""
+    aliases = company_aliases(company, title)
+    queries = search_plan(name, company, title, domain)
     full = " ".join(name.lower().split())
     marks = {a.lower() for a in aliases} | {a.lower().split()[0] for a in aliases}
     if domain:

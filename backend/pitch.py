@@ -61,7 +61,7 @@ def create(person_id: int, kind: str | None = None, context_id: int | None = Non
 def get(pitch_id: int) -> dict | None:
     with db.session() as s:
         r = s.execute(
-            """SELECT pt.*, p.full_name, p.title, p.linkedin_url, p.email, c.name company, c.id company_id FROM pitch pt
+            """SELECT pt.*, p.full_name, p.title, p.linkedin_url, p.email, p.email, c.name company, c.id company_id FROM pitch pt
                JOIN person p ON p.id=pt.person_id JOIN company c ON c.id=p.company_id WHERE pt.id=?""", (pitch_id,)).fetchone()
     if not r:
         return None
@@ -78,7 +78,7 @@ def latest_for_person(person_id: int) -> dict | None:
 
 
 def list_all(company_id: int | None = None, workspace_id: int | None = None) -> list[dict]:
-    q = """SELECT pt.id, pt.person_id, pt.status, pt.score, pt.updated_at, pt.data, p.full_name, p.title, p.linkedin_url,
+    q = """SELECT pt.id, pt.person_id, pt.status, pt.score, pt.updated_at, pt.data, p.full_name, p.title, p.linkedin_url, p.email,
            c.name company, c.id company_id FROM pitch pt JOIN person p ON p.id=pt.person_id JOIN company c ON c.id=p.company_id
            WHERE c.workspace_id=?"""
     args: tuple = (workspace_id or tenancy.current(),)
