@@ -65,3 +65,27 @@ def test_full_research_flow_on_d1(monkeypatch):
     assert d["initiatives"] and d["initiatives"][0]["contacts"]
     assert api.get(f"/api/accounts/{new}/org").json()["nodes"]
     assert api.get("/api/accounts").json()[0]["name"] == "Zen Finance D1"
+
+
+def test_d1_reads_are_cached_and_writes_clear_the_cache(monkeypatch):
+    path = os.path.join(tempfile.mkdtemp(), "d1c.db")
+    monkeypatch.setattr(db, "D1_PROXY_URL", "http://d1.internal")
+    handler = _fake_worker(path)
+    calls = {"n": 0}
+
+    def counting(request):
+        calls["n"] += 1
+        return handler(request)
+    client = httpx.Client(transport=httpx.MockTransport(counting))
+    monkeypatch.setattr(db, "_client", lambda: client)
+    db._cache_clear()
+    with db.session() as s:
+        s.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+        s.execute("INSERT INTO t(v) VALUES ('a')")
+        calls["n"] = 0
+        assert s.execute("SELECT v FROM t").fetchone()["v"] == "a"
+        assert s.execute("SELECT v FROM t").fetchone()["v"] == "a"
+        assert calls["n"] == 1                                  # second read came from memory
+        s.execute("UPDATE t SET v='b'")
+        assert s.execute("SELECT v FROM t").fetchone()["v"] == "b"   # a write clears the cache
+        assert calls["n"] == 3

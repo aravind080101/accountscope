@@ -9,6 +9,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -343,6 +344,43 @@ def _norm(v):
     return v
 
 
+# Every D1 query is a round trip over the internet, so identical reads are remembered briefly. Any write clears
+# everything (one app server, so it sees all writes); the short lifetime covers changes made outside the app
+# (wrangler d1 execute, the import script).
+_READ = re.compile(r"^\s*(select|with)\b", re.I)
+CACHE_SECONDS = float(os.getenv("D1_CACHE_SECONDS", "20"))
+_cache: dict = {}
+_cache_lock = threading.Lock()
+
+
+def _cache_key(sql: str, args: list) -> str:
+    return sql + "\x00" + json.dumps(args, default=str)
+
+
+def _cache_get(sql: str, args: list):
+    if CACHE_SECONDS <= 0:
+        return None
+    with _cache_lock:
+        hit = _cache.get(_cache_key(sql, args))
+    if hit and time.monotonic() - hit[0] < CACHE_SECONDS:
+        return hit[1], [list(r) for r in hit[2]]
+    return None
+
+
+def _cache_put(sql: str, args: list, cols: list, rows: list) -> None:
+    if CACHE_SECONDS <= 0:
+        return
+    with _cache_lock:
+        if len(_cache) > 2000:
+            _cache.clear()
+        _cache[_cache_key(sql, args)] = (time.monotonic(), list(cols), [list(r) for r in rows])
+
+
+def _cache_clear() -> None:
+    with _cache_lock:
+        _cache.clear()
+
+
 class D1Connection:
     """Sends statements to the Worker's D1 handler. Each statement commits on its own (D1 has no
     cross-request transactions); executemany sends one atomic batch."""
@@ -359,16 +397,29 @@ class D1Connection:
         return data["results"]
 
     def execute(self, sql: str, params=()) -> D1Cursor:
-        res = self._call([{"sql": sql, "params": [_norm(p) for p in (params or ())]}])[0]
-        return D1Cursor(res.get("columns") or [], res.get("rows") or [], res.get("last_row_id"), res.get("changes", 0))
+        args = [_norm(p) for p in (params or ())]
+        read = bool(_READ.match(sql))
+        if read:
+            hit = _cache_get(sql, args)
+            if hit is not None:
+                return D1Cursor(*hit)
+        else:
+            _cache_clear()
+        res = self._call([{"sql": sql, "params": args}])[0]
+        cols, rows = res.get("columns") or [], res.get("rows") or []
+        if read:
+            _cache_put(sql, args, cols, rows)
+        return D1Cursor(cols, rows, res.get("last_row_id"), res.get("changes", 0))
 
     def executemany(self, sql: str, seq) -> D1Cursor:
+        _cache_clear()
         stmts = [{"sql": sql, "params": [_norm(p) for p in params]} for params in seq]
         for k in range(0, len(stmts), 50):
             self._call(stmts[k:k + 50])
         return D1Cursor([], [])
 
     def executescript(self, script: str) -> None:
+        _cache_clear()
         stmts = [{"sql": x, "params": []} for x in split_sql(script)]
         for k in range(0, len(stmts), 25):
             self._call(stmts[k:k + 25])

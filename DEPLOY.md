@@ -47,9 +47,19 @@ The script connects everything, checks it works, and offers to copy your Mac's a
 ## Updating later
 
 ```bash
-git add . && git commit -m "Update" && git push      # Render redeploys by itself
-npx wrangler deploy                                     # only if cloudflare/ changed
+./ship.sh "what you changed"
 ```
+
+It rebuilds the screens if needed, runs the tests, pushes to GitHub (Render redeploys the app server) and
+deploys the Cloudflare Worker (which serves the screens and your link).
+
+## Speed
+
+- The screens are served by Cloudflare itself, so the app opens instantly.
+- The scheduler pings the app server every 10 minutes, so Render's free plan never puts it to sleep
+  (one always-on server fits in Render's 750 free hours a month).
+- Database reads are remembered for 20 seconds (any change clears them), because every query to D1 is a trip
+  over the internet. Set `D1_CACHE_SECONDS` in Render to change it, or `0` to turn it off.
 
 Limits: Cloudflare's free plan allows 100,000 requests a day (each database call counts as one).
 Render's free server is small (about 0.5 GB memory), so research runs are slower than on your Mac.

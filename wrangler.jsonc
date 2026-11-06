@@ -16,8 +16,12 @@
     { "binding": "DB", "database_name": "accountscope", "database_id": "119ff118-f0ec-45c3-a53f-75db5f77373b" }
   ],
 
-  // Starts due watch runs every 6 hours (and wakes the free app server).
-  "triggers": { "crons": ["17 */6 * * *"] }
+  // The app's screens, served by Cloudflare directly (free, fast). Requests that don't match a file
+  // (/api/..., /health) go on to the Worker, which forwards them to Render.
+  "assets": { "directory": "./frontend-react/dist", "binding": "ASSETS" },
+
+  // Every 10 minutes: keeps the free Render server awake; every 6 hours also starts due watch runs.
+  "triggers": { "crons": ["*/10 * * * *"] }
 
   // Secrets (set by scripts/deploy_free.py): APP_ORIGIN, INTERNAL_TOKEN.
 }

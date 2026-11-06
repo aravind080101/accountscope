@@ -8,7 +8,9 @@
  *   with x-proxy-token; the app refuses requests without it, so its own onrender.com address is useless.
  * - /__d1/query is how the app reads and writes the D1 database. It is public, so it requires the
  *   shared INTERNAL_TOKEN.
- * - The Cron Trigger starts due watch runs (and wakes the app, which sleeps after 15 minutes idle).
+ * - The app's screens (frontend-react/dist) are served by Cloudflare itself as static assets, before this code
+ *   runs: fast, free, and they load even while the app server is waking up. Only /api calls reach Render.
+ * - The Cron Trigger keeps the app awake (pinged every 10 minutes) and starts due watch runs every 6 hours.
  */
 import { DurableObject } from "cloudflare:workers";
 import { runStatements, type Statement } from "./d1";
@@ -100,9 +102,15 @@ export default {
     return out;
   },
 
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    if (!origin(env) || !env.INTERNAL_TOKEN) return;
-    const headers = new Headers({ "x-internal-token": env.INTERNAL_TOKEN });
-    ctx.waitUntil(toApp(env, "/api/internal/watch", { method: "POST", headers }).catch(() => undefined));
+  // One cron, every 10 minutes (the free plan allows few): ping the app so Render never puts it to sleep
+  // (750 free hours a month cover one server running non-stop), and every 6 hours start due watch runs.
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    if (!origin(env)) return;
+    ctx.waitUntil(toApp(env, "/health").then((r) => r.body?.cancel()).catch(() => undefined));
+    const t = new Date(controller.scheduledTime);
+    if (env.INTERNAL_TOKEN && t.getUTCHours() % 6 === 0 && t.getUTCMinutes() < 10) {
+      const headers = new Headers({ "x-internal-token": env.INTERNAL_TOKEN });
+      ctx.waitUntil(toApp(env, "/api/internal/watch", { method: "POST", headers }).catch(() => undefined));
+    }
   },
 } satisfies ExportedHandler<Env>;
