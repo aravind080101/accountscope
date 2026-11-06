@@ -230,8 +230,8 @@ function AccountMenu({ me, onPassword, onSignOut, onSwitched }: any) {
       <MenuContent side="top" align="start" className="w-60">
         <div className="px-2 pb-1.5 pt-1 text-[11.5px] text-faint">{u.email}</div>
         {admin && <MenuItem onSelect={() => go("/team")}><Users />Team</MenuItem>}
-        {u.is_superadmin && <MenuItem onSelect={() => go("/workspaces")}><Building />Workspaces</MenuItem>}
-        {u.is_superadmin && me.workspaces?.length > 1 && <>
+        {!!u.is_superadmin && <MenuItem onSelect={() => go("/workspaces")}><Building />Workspaces</MenuItem>}
+        {!!u.is_superadmin && me.workspaces?.length > 1 && <>
           <div className="mx-2 my-1 border-t border-line" /><div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-faint">Switch workspace</div>
           {me.workspaces.map((w: any) => <MenuItem key={w.id} onSelect={() => w.id !== me.workspace?.id && switchTo(w)}>
             <Avatar name={w.name} size={16} square /><span className="flex-1 truncate">{w.name}</span>{w.id === me.workspace?.id && <span className="text-[11px] text-owner">current</span>}</MenuItem>)}
