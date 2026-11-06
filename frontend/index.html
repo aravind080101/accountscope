@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AccountScope</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,650;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css?v=7" />
+</head>
+<body>
+  <aside class="rail">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="2" opacity=".35"/><circle cx="16" cy="16" r="8" fill="none" stroke="currentColor" stroke-width="2" opacity=".6"/><circle cx="16" cy="16" r="3" fill="#F2A93B"/></svg>
+      <span>AccountScope</span>
+    </div>
+
+    <nav class="nav">
+      <button data-view="home" class="nav-btn active">Accounts</button>
+      <button data-view="discover" class="nav-btn">Discover</button>
+      <button data-view="alerts" class="nav-btn">Alerts <span id="alertBadge" class="badge" hidden></span></button>
+    </nav>
+
+    <form id="addForm" class="research">
+      <label for="name">Research a company</label>
+      <input id="name" placeholder="Company name" required autocomplete="off" />
+      <input id="domain" placeholder="Website, e.g. swiggy.com" autocomplete="off" />
+      <button type="submit" class="btn primary block">Research</button>
+    </form>
+
+    <details class="paste">
+      <summary>Paste a list instead</summary>
+      <form id="bulkForm">
+        <textarea id="bulk" rows="5" placeholder="One per line, website optional&#10;HDFC Bank, hdfcbank.com&#10;Swiggy, swiggy.com&#10;Lufthansa"></textarea>
+        <button type="submit" class="btn ghost-dark block">Research all</button>
+      </form>
+    </details>
+
+    <div class="rail-head">Your accounts <span id="acctCount"></span></div>
+    <ul id="accounts" class="accounts"></ul>
+
+    <div class="rail-foot">
+      <div id="conn" class="conn"></div>
+      <button id="settingsBtn" class="seller">Selling as <b id="seller">…</b></button>
+    </div>
+  </aside>
+
+  <main id="view" class="view" tabindex="-1"></main>
+
+  <dialog id="settings">
+    <form method="dialog" class="settings">
+      <h3>What you sell</h3>
+      <p class="muted">Your offerings decide which initiatives count as a fit, and your buyer titles are added to every initiative's contacts.</p>
+      <label for="profCompany">Describe your company and the AI drafts the profile</label>
+      <input id="profCompany" placeholder="Your company name" />
+      <textarea id="profDesc" rows="3" placeholder="e.g. Cloud migration and data engineering services for banks and insurers"></textarea>
+      <button type="button" id="genProfile" class="btn ghost">Draft profile</button>
+      <label for="profJson">Profile</label>
+      <textarea id="profJson" class="code" rows="14" spellcheck="false"></textarea>
+      <p id="profMsg" class="muted small"></p>
+      <div class="row-end">
+        <button value="cancel" class="btn ghost">Close</button>
+        <button type="button" id="saveProfile" class="btn primary">Save profile</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js?v=6"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  // AccountScope on Cloudflare's FREE plan: this Worker is the public address and holds the D1 database;
+  // the Python app runs on a free Render web service (see DEPLOY.md, scripts/deploy_free.py).
+  // On Workers Paid you can run the app in a Cloudflare Container instead: wrangler.containers.jsonc.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "accountscope",
+  "main": "cloudflare/worker-free.ts",
+  "compatibility_date": "2026-11-03",
+  "observability": { "enabled": true },
+
+  // Kept from the first (container) deploy attempt so no Durable Object migration is needed. Free.
+  "durable_objects": { "bindings": [{ "name": "APP", "class_name": "AppContainer" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AppContainer"] }],
+
+  "d1_databases": [
+    { "binding": "DB", "database_name": "accountscope", "database_id": "119ff118-f0ec-45c3-a53f-75db5f77373b" }
+  ],
+
+  // Starts due watch runs every 6 hours (and wakes the free app server).
+  "triggers": { "crons": ["17 */6 * * *"] }
+
+  // Secrets (set by scripts/deploy_free.py): APP_ORIGIN, INTERNAL_TOKEN.
+}

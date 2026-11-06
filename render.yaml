@@ -1,0 +1,35 @@
+# Render Blueprint for AccountScope's app server (free plan).
+# Visitors never open this server directly: they use https://accountscope.aravind-ff7.workers.dev,
+# the Cloudflare Worker, which forwards to it. All data lives in Cloudflare D1.
+services:
+  - type: web
+    name: accountscope
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Fixed settings
+      - key: RUNNING_IN_CLOUD
+        value: "1"
+      - key: PROXY_ONLY
+        value: "1"
+      - key: WATCH_SCHEDULER
+        value: "off"
+      - key: D1_PROXY_URL
+        value: https://accountscope.aravind-ff7.workers.dev/__d1
+      # Render asks you for these when you create the Blueprint (stored encrypted by Render)
+      - key: INTERNAL_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: APOLLO_API_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

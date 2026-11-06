@@ -1,0 +1,10 @@
+*.db
+.dev.vars
+.env
+.pytest_cache/
+.venv/
+.wrangler/
+__pycache__/
+d1_import.sql
+data/
+node_modules/

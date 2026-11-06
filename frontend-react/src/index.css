@@ -1,0 +1,35 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+@theme {
+  --font-sans: "Inter Variable", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --color-ink: #1b1f3b;
+  --color-ink-2: #262b52;
+  --color-ink-3: #343a66;
+  --color-rail: #c9cce6;
+  --color-rail-muted: #8d92b8;
+  --color-saffron: #f2a93b;
+  --color-saffron-soft: #fef3e0;
+  --color-saffron-ink: #8a5300;
+  --color-line: #ebebef;
+  --color-line-2: #f3f3f6;
+  --color-canvas: #fafafb;
+  --color-fg: #18181f;
+  --color-muted: #6b6b78;
+  --color-faint: #9a9aa6;
+  --color-owner: #0e8a6a;
+  --color-owner-soft: #e3f4ee;
+  --color-sponsor: #6d4aff;
+  --color-sponsor-soft: #efebff;
+  --color-influencer: #b56d00;
+  --color-influencer-soft: #fdf0db;
+  --color-practitioner: #5b6478;
+  --color-practitioner-soft: #eef0f4;
+  --color-danger: #c03a26;
+  --color-danger-soft: #fcebe8;
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-white text-fg antialiased; font-family: var(--font-sans); font-size: 13.5px; font-feature-settings: "cv11", "ss01", "tnum"; }
+::selection { background: #fde7c2; }
+* { scrollbar-width: thin; scrollbar-color: #d8d8de transparent; }

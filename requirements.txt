@@ -1,0 +1,12 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+anthropic>=0.40
+pydantic>=2.7
+python-dotenv>=1.0
+pytest>=8.0
+wappalyzer-python3>=0.0.10   # free website tech detection (GPLv3)
+python-multipart
+pypdf
+python-pptx
+python-docx

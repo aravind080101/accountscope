@@ -1,0 +1,14 @@
+{
+  "name": "accountscope-cloudflare",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "logs": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/containers": "latest",
+    "@cloudflare/workers-types": "latest",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.40.0"
+  }
+}

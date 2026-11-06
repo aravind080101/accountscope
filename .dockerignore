@@ -1,0 +1,12 @@
+.env
+.venv
+data
+tests
+node_modules
+frontend-react/node_modules
+frontend-react/src
+.wrangler
+d1_import.sql
+**/__pycache__
+**/.pytest_cache
+*.zip

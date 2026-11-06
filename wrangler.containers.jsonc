@@ -1,0 +1,38 @@
+{
+  // AccountScope on Cloudflare: a Worker in front, the Python app in a Container, data in D1.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Paid-plan version (Workers Paid, $5/month): npx wrangler deploy -c wrangler.containers.jsonc
+  "name": "accountscope",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2026-11-03",
+  "observability": { "enabled": true },
+
+  "containers": [
+    {
+      "class_name": "AppContainer",
+      "image": "./Dockerfile",
+      "instance_type": "basic",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "APP", "class_name": "AppContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AppContainer"] }],
+
+  // Created in your account (APAC region). To make a new one: npx wrangler d1 create accountscope --location apac
+  "d1_databases": [
+    { "binding": "DB", "database_name": "accountscope", "database_id": "119ff118-f0ec-45c3-a53f-75db5f77373b" }
+  ],
+
+  // Re-research watched accounts that are due (every 6 hours).
+  "triggers": { "crons": ["17 */6 * * *"] },
+
+  // Non-secret settings. Keys and passwords are secrets: see DEPLOY.md.
+  "vars": {
+    "LLM_PROVIDER": "openai",
+    "OPENAI_MODEL": "gpt-5.6-sol",
+    "CONNECTION_NOTE_MAX": "280",
+    "WATCH_INTERVAL_DAYS": "7"
+  }
+}
