@@ -252,7 +252,7 @@ Ignore generic marketing, other companies' initiatives, and anything older than 
         try:
             result = llm.complete_json(EXTRACT_SYSTEM, prompt, 5000)
         except Exception as exc:  # a bad batch should not sink the whole run, but say why
-            out["errors"].append(f"{type(exc).__name__}: {str(exc)[:300]}")
+            out["errors"].append(config.redact(f"{type(exc).__name__}: {str(exc)[:300]}"))
             continue
         if not isinstance(result, dict):
             out["errors"].append(f"AI returned {type(result).__name__} instead of an object")
@@ -739,6 +739,6 @@ def _run(run_id: int, company_id: int, force: bool = False) -> None:
     except Exception as exc:  # surface any failure in the UI
         with db.session() as s:
             s.execute(
-                "UPDATE run SET status='failed', error=?, finished_at=CURRENT_TIMESTAMP WHERE id=?", (str(exc), run_id)
+                "UPDATE run SET status='failed', error=?, finished_at=CURRENT_TIMESTAMP WHERE id=?", (config.redact(str(exc)), run_id)
             )
         log(f"Failed: {exc}")

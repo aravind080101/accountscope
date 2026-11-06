@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -29,6 +29,18 @@ async def lifespan(_app):
 
 app = FastAPI(title="AccountScope", version="0.4.0", lifespan=lifespan)
 app.middleware("http")(auth.middleware)
+
+
+@app.middleware("http")
+async def scrub_secrets(request, call_next):
+    """Never send an API key or token to the browser, whatever message it ended up in."""
+    resp = await call_next(request)
+    if not resp.headers.get("content-type", "").startswith("application/json"):
+        return resp
+    body = b"".join([chunk async for chunk in resp.body_iterator])
+    clean = config.redact(body.decode("utf-8", "replace")).encode("utf-8")
+    headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
+    return Response(content=clean, status_code=resp.status_code, headers=headers, media_type=resp.media_type)
 
 
 @app.middleware("http")

@@ -332,7 +332,7 @@ _http = threading.local()
 def _client() -> httpx.Client:
     if not getattr(_http, "c", None):
         # Free hosting: the Worker's /__d1 route is public, so it checks this token.
-        token = os.getenv("INTERNAL_TOKEN", "")
+        token = os.getenv("INTERNAL_TOKEN", "").strip()
         _http.c = httpx.Client(timeout=60, headers={"x-internal-token": token} if token else None)
     return _http.c
 
@@ -477,7 +477,7 @@ def rows(cur) -> list[dict]:
 def append_log(run_id: int, message: str) -> None:
     with session() as s:
         log = json.loads(s.execute("SELECT log FROM run WHERE id=?", (run_id,)).fetchone()["log"])
-        log.append(message)
+        log.append(config.redact(message))
         s.execute("UPDATE run SET log=? WHERE id=?", (json.dumps(log), run_id))
 
 

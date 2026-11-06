@@ -23,7 +23,7 @@ import json
 import os
 import re
 
-from . import buyers, db, llm, profiles, tenancy
+from . import buyers, config, db, llm, profiles, tenancy
 
 PASS_SCORE = 7.5
 MAX_ROUNDS = 4
@@ -45,7 +45,7 @@ BANNED = ["hope this finds you", "i came across your profile", "i'd love to conn
 def _log(pid: int, msg: str) -> None:
     with db.session() as s:
         row = s.execute("SELECT log FROM pitch WHERE id=?", (pid,)).fetchone()
-        log = json.loads(row["log"] or "[]") + [msg]
+        log = json.loads(row["log"] or "[]") + [config.redact(msg)]
         s.execute("UPDATE pitch SET log=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (json.dumps(log), pid))
 
 
@@ -650,7 +650,7 @@ def _run(pitch_id: int) -> None:
         _log(pitch_id, f"Done: {len(rounds)} round(s), final score {best['simulation']['overall']:g}/10")
     except Exception as exc:
         with db.session() as s:
-            s.execute("UPDATE pitch SET status='failed', error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (str(exc), pitch_id))
+            s.execute("UPDATE pitch SET status='failed', error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (config.redact(str(exc)), pitch_id))
         _log(pitch_id, f"Failed: {exc}")
 
 

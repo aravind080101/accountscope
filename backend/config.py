@@ -1,5 +1,6 @@
 """Runtime configuration, read from environment variables (or a .env file)."""
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -7,10 +8,10 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
-APOLLO_API_KEY = os.getenv("APOLLO_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()   # pasted keys often carry a stray space or line break
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()   # pasted keys often carry a stray space or line break
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()   # pasted keys often carry a stray space or line break
+APOLLO_API_KEY = os.getenv("APOLLO_API_KEY", "").strip()   # pasted keys often carry a stray space or line break
 
 # Which LLM to use: "anthropic" or "openai". Left empty, it picks whichever key is set
 # (Anthropic first if both are).
@@ -19,7 +20,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5-5")          # used with Ant
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-sol")          # used with OpenAI
 DB_PATH = os.getenv("DB_PATH", str(ROOT / "data" / "accountscope.db"))
 
-BUILTWITH_API_KEY = os.getenv("BUILTWITH_API_KEY", "")   # optional: website tech stack
+BUILTWITH_API_KEY = os.getenv("BUILTWITH_API_KEY", "").strip()   # pasted keys often carry a stray space or line break   # optional: website tech stack
 BUILTWITH_URL = os.getenv("BUILTWITH_URL", "https://api.builtwith.com/v21/api.json")
 
 # Caching: re-research within this window re-uses stored sources instead of searching again.
@@ -39,7 +40,7 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 # Lets the very first visitor create the owner account in the browser. Off in the cloud.
 ALLOW_SETUP = not RUNNING_IN_CLOUD and os.getenv("ALLOW_SETUP", "on").lower() not in ("off", "0", "false", "no")
-INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "")   # lets the Cloudflare scheduler trigger watch runs
+INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "").strip()   # lets the Cloudflare scheduler trigger watch runs
 # Free hosting (Render): the app's own address is public, so only answer requests that came through the
 # Cloudflare Worker, which adds x-proxy-token. /health stays open for Render's health check.
 PROXY_ONLY = os.getenv("PROXY_ONLY", "").lower() in ("1", "true", "yes", "on")
@@ -76,3 +77,27 @@ def llm_provider() -> str | None:
 def configured() -> bool:
     """Research needs an LLM key (Anthropic or OpenAI) and a search key. Apollo is optional."""
     return bool(llm_provider() and TAVILY_API_KEY)
+
+
+# ------------------------------------------------------------------ never show a key in a message
+
+_SECRET_PATTERNS = [
+    (re.compile(r"sk-(?:proj-|ant-[a-z0-9]+-|svcacct-)?[A-Za-z0-9_\-]{16,}"), "sk-…[hidden]"),
+    (re.compile(r"tvly-[A-Za-z0-9_\-]{10,}"), "tvly-…[hidden]"),
+    (re.compile(r"hf_[A-Za-z0-9]{20,}"), "hf_…[hidden]"),
+    (re.compile(r"(?i)(bearer|x-api-key|api[_-]?key)(\\n|\s|[:=\"'])+[A-Za-z0-9_\-.]{12,}"), r"\1 [hidden]"),
+]
+
+
+def redact(text):
+    """Remove API keys and tokens from text shown to users or stored in logs."""
+    if not isinstance(text, str) or not text:
+        return text
+    for name in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "TAVILY_API_KEY", "APOLLO_API_KEY", "BUILTWITH_API_KEY",
+                 "INTERNAL_TOKEN", "ADMIN_PASSWORD"):
+        v = globals().get(name) or ""
+        if len(v) >= 8:
+            text = text.replace(v, "[hidden]")
+    for rx, sub in _SECRET_PATTERNS:
+        text = rx.sub(sub, text)
+    return text
