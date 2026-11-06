@@ -206,3 +206,26 @@ def test_browse_companies(connected, monkeypatch):
     assert r["companies"][0]["name"] == "Zeta Corp" and r["total"] == 61
     monkeypatch.setattr(config, "APOLLO_API_KEY", "")
     assert client.post("/api/discover/companies", json={}).status_code == 400
+
+
+def test_leaders_named_anywhere_become_contacts_and_apollo_errors_are_logged(monkeypatch):
+    from backend import pipeline
+    from backend.providers import apollo
+    init = {"name": "Digital banking app rollout", "category": "app_modernization", "people": [], "owner_titles": []}
+    profile = {"buyer_titles": [], "offerings": [{"name": "Testing"}]}
+    monkeypatch.setattr(apollo, "search_people", lambda *a, **k: [])
+    pool = [{"name": "Sankaran G", "title": "General Manager & Chief Information Officer (CIO)"},
+            {"name": "Ashish Kishore", "title": "Branch Development Manager"}]
+    people = pipeline.candidate_people({"domain": "cityunionbank.com"}, init, profile, None, pool)
+    assert [p["full_name"] for p in people] == ["Sankaran G"] and people[0]["source"] == "sources"
+    role, score, why = pipeline.score_person(people[0], init, None, profile)
+    assert "Named in the sources" in why and score > 0.3
+
+    class R:
+        status_code = 403
+        def json(self): return {"error": "api_search requires a master key"}
+    monkeypatch.setattr(apollo.config, "APOLLO_API_KEY", "k")
+    monkeypatch.setattr(apollo.httpx, "post", lambda *a, **k: R())
+    assert apollo._search_people("x.com", ["CTO"], 5) == []
+    assert "master" in apollo.last_error and "plan" in apollo.last_error
+    assert pipeline.domain_from_sources("HDFC Bank", [{"url": "https://www.hdfcbank.com/a"}, {"url": "https://news.example/hdfc"}]) == "hdfcbank.com"

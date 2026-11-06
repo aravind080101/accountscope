@@ -19,6 +19,27 @@ def available() -> bool:
     return bool(config.APOLLO_API_KEY)
 
 
+# The last people-search failure, in words, so a research run can say why it found nobody.
+last_error: str | None = None
+
+_WHY = {401: "Apollo rejected the API key (check APOLLO_API_KEY)",
+        403: "Apollo refused: this key or plan doesn't allow API people search (use a master API key)",
+        422: "Apollo didn't accept the search",
+        429: "Apollo's rate limit was hit; try again in a few minutes"}
+
+
+def _explain(resp: httpx.Response | None, exc: Exception | None = None) -> str:
+    if resp is None:
+        return f"Apollo couldn't be reached ({type(exc).__name__})"
+    detail = ""
+    try:
+        j = resp.json()
+        detail = str(j.get("error") or j.get("message") or "")[:160]
+    except Exception:
+        pass
+    return config.redact(f"{_WHY.get(resp.status_code, f'Apollo answered {resp.status_code}')}" + (f": {detail}" if detail else ""))
+
+
 LEADERSHIP_TITLES = [
     "CEO", "CTO", "CIO", "COO", "Chief Digital Officer", "Chief Product Officer", "Chief Data Officer", "CISO",
     "VP Engineering", "VP Technology", "VP Product", "Head of Engineering", "Head of QA", "Head of Quality",
@@ -49,6 +70,7 @@ def leadership(domain: str) -> list[dict]:
 
 
 def _search_people(domain: str, titles: list[str], per_page: int) -> list[dict]:
+    global last_error
     body = {
         "q_organization_domains_list": [domain],
         "person_titles": titles,
@@ -58,9 +80,13 @@ def _search_people(domain: str, titles: list[str], per_page: int) -> list[dict]:
     }
     try:
         resp = httpx.post(f"{BASE}/mixed_people/api_search", json=body, headers=_headers(), timeout=30)
-        resp.raise_for_status()
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        last_error = _explain(None, exc)
         return []
+    if resp.status_code >= 400:
+        last_error = _explain(resp)
+        return []
+    last_error = None
     people = []
     for p in resp.json().get("people", []):
         last = p.get("last_name") or p.get("last_name_obfuscated") or ""

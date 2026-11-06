@@ -291,7 +291,7 @@ function ContactRow({ p, act, onBrief, base = "/api/contacts" }: any) {
       <Td><Badge tone={ROLE_TONE[p.role]}>{p.role}</Badge></Td>
       <Td className="max-w-[340px] text-[12.5px] text-muted">
         <div className="line-clamp-2">{p.rationale}</div>
-        <div className="mt-0.5 text-[11.5px] text-faint">{p.source === "evidence" ? <span className="font-medium text-owner">Named in sources</span> : "From people database"}</div>
+        <div className="mt-0.5 text-[11.5px] text-faint">{p.source === "evidence" ? <span className="font-medium text-owner">Named in sources for this</span> : p.source === "sources" ? <span className="font-medium text-owner">Named in the company's sources</span> : "From people database"}</div>
       </Td>
       <Td className="whitespace-nowrap"><Meter value={p.score} /> <span className="ml-1 text-[12px] tabular-nums text-muted">{pct(p.score)}</span></Td>
       <Td className="pr-3">
@@ -404,8 +404,8 @@ function ClientProjectCard({ p, company, open, toggle, act, onBrief }: any) {
                   <li key={x.name} className="flex items-center gap-2 text-[12.5px]"><Avatar name={x.name} size={22} /><div className="min-w-0"><div className="truncate font-medium">{x.name}</div><div className="truncate text-[11.5px] text-faint">{x.title}</div></div></li>
                 ))}</ul>
               ) : <p className="mt-1.5 text-[12px] text-faint">No one on their side named in sources.</p>}
-              <Button variant="outline" size="xs" className="mt-3 w-full" onClick={research}>
-                {p.counterparty_account_id ? <><ExternalLink />Open {p.counterparty}</> : <><RefreshCw />Research {p.counterparty} too</>}
+              <Button variant="outline" size="xs" className="mt-3 h-auto min-h-7 w-full whitespace-normal py-1.5 leading-snug" onClick={research} title={p.counterparty}>
+                {p.counterparty_account_id ? <><ExternalLink /><span className="min-w-0 break-words">Open {p.counterparty}</span></> : <><RefreshCw /><span className="min-w-0 break-words">Research {p.counterparty} too</span></>}
               </Button>
             </div>
           </div>

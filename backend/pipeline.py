@@ -385,10 +385,37 @@ def _relevant(title: str, init: dict, profile: dict) -> bool:
     return (fit >= 0.8 and in_function(title, init["category"])) or is_buyer_persona(title, profile)
 
 
-def candidate_people(company: dict, init: dict, profile: dict, fb: dict | None = None) -> list[dict]:
-    """People named in the evidence, plus title-matched people from the people database."""
+def domain_from_sources(name: str, docs: list[dict]) -> str | None:
+    """The company's own site, guessed from the URLs of the pages read: the most common host whose name contains
+    the company's first word (hdfcbank.com for 'HDFC Bank'). None when nothing fits."""
+    import re as _re
+    from collections import Counter
+    first = _re.sub(r"[^a-z0-9]", "", (name.split() or [""])[0].lower())
+    if len(first) < 3:
+        return None
+    hosts = Counter()
+    for d in docs:
+        host = _re.sub(r"^www\d?\.", "", (_re.match(r"https?://([^/:]+)", d.get("url") or "") or [None, ""])[1].lower())
+        parts = host.split(".")
+        if len(parts) < 2:
+            continue
+        root = ".".join(parts[-3:]) if parts[-2] in ("co", "com", "net", "org", "ac", "gov") and len(parts) >= 3 else ".".join(parts[-2:])
+        if first in root.split(".")[0] and not any(x in root for x in ("linkedin", "naukri", "glassdoor", "indeed", "wikipedia")):
+            hosts[root] += 1
+    return hosts.most_common(1)[0][0] if hosts else None
+
+
+def candidate_people(company: dict, init: dict, profile: dict, fb: dict | None = None,
+                     named_pool: list[dict] | None = None) -> list[dict]:
+    """People named in this initiative's evidence; leaders named elsewhere in the sources whose title fits it;
+    and title-matched people from the people database."""
     people = [{**p, "full_name": p["name"], "source": "evidence"} for p in init.get("people", [])]
     named = {p["full_name"].lower() for p in people}
+    for p in named_pool or []:  # e.g. the CIO quoted in an unrelated article, for a digital-banking rollout
+        nm = (p.get("name") or p.get("full_name") or "").strip()
+        if nm and nm.lower() not in named and p.get("title") and _relevant(p["title"], init, profile):
+            people.append({**p, "full_name": nm, "source": "sources", "involvement": ""})
+            named.add(nm.lower())
     cat = category(init["category"])
     titles = cat["owner_titles"] + cat["sponsor_titles"] + cat["practitioner_titles"] + profile.get("buyer_titles", [])
     titles = list(dict.fromkeys(init.get("owner_titles", []) + titles))
@@ -411,12 +438,13 @@ def candidate_people(company: dict, init: dict, profile: dict, fb: dict | None =
 def score_person(p: dict, init: dict, recency_days: int | None, profile: dict, fb: dict | None = None) -> tuple[str, float, str]:
     role, title_fit = classify(p.get("title", ""), init["category"], p.get("involvement", ""))
     named = p["source"] == "evidence"
+    in_sources = p["source"] == "sources"  # named at this company in the sources, just not about this initiative
     if role not in ("Owner", "Sponsor") and _title_matches(p.get("title", ""), init.get("owner_titles", [])):
         role, title_fit = "Owner", max(title_fit, 0.85)
     buyer = is_buyer_persona(p.get("title", ""), profile)
     if buyer and not named and role not in ("Owner", "Sponsor"):
         role, title_fit = "Influencer", 0.7
-    score = 0.45 * named + 0.30 * title_fit + (0.08 if buyer else 0)
+    score = 0.45 * named + 0.2 * in_sources + 0.30 * title_fit + (0.08 if buyer else 0)
     score += {"Owner": 0.15, "Sponsor": 0.12, "Influencer": 0.08, "Practitioner": 0.06}[role]
     if recency_days is not None:
         score += 0.10 * max(0.0, 1 - recency_days / config.LOOKBACK_DAYS)
@@ -426,6 +454,8 @@ def score_person(p: dict, init: dict, recency_days: int | None, profile: dict, f
         return role, 1.0, "Confirmed by your team as the right contact."
     if named:
         why = f"Named in the evidence: {p.get('involvement') or 'mentioned in a source'}."
+    elif in_sources:
+        why = f"Named in the sources as {p['title']}; that role usually owns or signs off {label} work like this."
     elif buyer and role == "Influencer":
         why = f"Your buyer persona ({p['title']}); usually decides on outside help for initiatives like this. Not named in sources."
     else:
@@ -606,7 +636,16 @@ def _run(run_id: int, company_id: int, force: bool = False) -> None:
                 )
                 company = dict(s.execute("SELECT * FROM company WHERE id=?", (company_id,)).fetchone())
         if not company.get("domain"):
-            log("No website domain known, so careers pages and the people search are skipped")
+            guess = domain_from_sources(company["name"], docs)
+            if guess:
+                with db.session() as s:
+                    s.execute("UPDATE company SET domain=? WHERE id=? AND domain IS NULL", (guess, company_id))
+                company["domain"] = guess
+                log(f"Website taken from the sources: {guess}")
+        if not company.get("domain"):
+            log("No website domain known, so careers pages and the people search are skipped. Add it and research again.")
+        elif not apollo.available():
+            log("APOLLO_API_KEY isn't set, so only people named in the sources are used")
         dates = {d["key"]: d.get("published_at") for d in docs}
         log(f"Analysing {len(docs)} sources: " + ", ".join(sorted({d['source_type'] for d in docs})))
 
@@ -648,7 +687,13 @@ def _run(run_id: int, company_id: int, force: bool = False) -> None:
         named_people = extracted["people"] + [p for i in inits for p in i.get("people", [])]
         _save_people_pool(company_id, named_people, key_to_id, "evidence")
         if company.get("domain"):
-            _save_people_pool(company_id, apollo.leadership(company["domain"]), key_to_id, "apollo")
+            apollo.last_error = None
+            pool = apollo.leadership(company["domain"])
+            _save_people_pool(company_id, pool, key_to_id, "apollo")
+            if apollo.last_error:
+                log(f"People database search failed: {apollo.last_error}. Only people named in the sources are used.")
+            elif apollo.available() and not pool:
+                log(f"The people database has no leaders listed for {company['domain']}")
 
         for n, init in enumerate(inits):
             fit_score, fit_reason = fits[n]
@@ -688,7 +733,7 @@ def _run(run_id: int, company_id: int, force: bool = False) -> None:
                         (iid, key_to_id[e["doc"]], e.get("quote", "")),
                     )
 
-            people = candidate_people(company, init, profile, fb)
+            people = candidate_people(company, init, profile, fb, named_people)
             ranked = []
             for p in people:
                 role, score, why = score_person(p, init, recency, profile, fb)
