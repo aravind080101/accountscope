@@ -89,3 +89,19 @@ def test_d1_reads_are_cached_and_writes_clear_the_cache(monkeypatch):
         s.execute("UPDATE t SET v='b'")
         assert s.execute("SELECT v FROM t").fetchone()["v"] == "b"   # a write clears the cache
         assert calls["n"] == 3
+
+
+def test_append_log_is_one_statement_and_keeps_order():
+    """The run log grows with a single UPDATE (one D1 round trip per line) and keeps text exactly."""
+    import json as _json
+    from backend import config as _config, db as _db
+    with _db.session() as s:
+        s.execute("INSERT INTO company(workspace_id, name) VALUES (1, 'Log Test Co')")
+        cid = s.execute("SELECT id FROM company WHERE name='Log Test Co'").fetchone()["id"]
+        rid = s.execute("INSERT INTO run(company_id, status) VALUES (?, 'running')", (cid,)).lastrowid
+    lines = ["first", 'has "quotes"', "ünïcode ✓", "key " + ("sk-" + "a" * 40)]
+    for m in lines:
+        _db.append_log(rid, m)
+    with _db.session() as s:
+        log = _json.loads(s.execute("SELECT log FROM run WHERE id=?", (rid,)).fetchone()["log"])
+    assert log == [_config.redact(m) for m in lines]

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { ClipboardPaste, Loader2, MessageCircle, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Brain, ClipboardPaste, Loader2, MessageCircle, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import * as D from "@radix-ui/react-dialog";
 import { api, post } from "@/lib/api";
 import { confirmCost } from "@/components/CostConfirm";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SheetContent } from "@/components/ui/dialog";
-import { Avatar } from "@/components/ui/misc";
+import { Avatar, Tooltip } from "@/components/ui/misc";
 import { Select, Textarea } from "@/components/ui/input";
 
 const STYLE: Record<string, string> = { "data-driven": "Data-driven", visionary: "Visionary", pragmatic: "Pragmatic", technical: "Technical", "relationship-led": "Relationship-led", unknown: "Not enough to tell" };
@@ -58,6 +58,7 @@ export function BriefSheet({ person, onClose, onBuilt }: { person: any; onClose:
                 {b.style_note && <p className="mt-1 text-[12.5px] text-muted">{b.style_note}</p>}
                 {b.note && <p className="mt-1 text-[12.5px] text-saffron-ink">{b.note}</p>}</div>
               <VoiceCard v={b.voice} />
+              <PersonalityCard p={b.personality} src={src} />
               <Samples pid={pid} onChange={() => build(true)} busy={busy} />
               {b.topics?.length > 0 && (
                 <div className="rounded-lg border border-line p-3"><div className="mb-2 text-[12px] font-semibold text-muted">What they've talked about</div>
@@ -90,6 +91,49 @@ export function BriefSheet({ person, onClose, onBuilt }: { person: any; onClose:
 
 
 const VOICE_LABEL: Record<string, string> = { register: "Register", length: "Writes", directness: "Directness", evidence: "Makes points with", energy: "Energy", emoji_hashtags: "Emoji / hashtags" };
+
+export function PersonalityCard({ p, src }: { p: any; src: (n: number) => any }) {
+  if (!p) return (
+    <div className="rounded-lg border border-line p-3 text-[12.5px] text-muted">
+      <div className="mb-1 flex items-center gap-2 text-[12px] font-semibold"><Brain className="size-3.5" />Personality</div>
+      This brief was built before personality reading existed. Click Refresh to add it.
+    </div>);
+  const traits = Object.values(p.traits || {}) as any[];
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-muted"><Brain className="size-3.5" />Personality
+        <span className="ml-auto font-normal text-faint">{p.known ? `${p.known} of ${traits.length} traits read from their own words` : "nothing first-hand to judge from"}</span></div>
+      {p.summary && <p className="mb-2.5 text-[13px] font-medium">{p.summary}</p>}
+      <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+        {traits.map((t) => {
+          const known = t.lean !== "unknown";
+          const pos = t.lean === "left" ? 50 - (t.strength || 1) * 15 : t.lean === "right" ? 50 + (t.strength || 1) * 15 : 50;
+          const s = t.source != null ? src(t.source) : null;
+          const row = (
+            <div className={known ? "" : "opacity-40"}>
+              <div className="flex justify-between text-[11.5px]">
+                <span className={t.lean === "left" ? "font-semibold text-fg" : "text-faint"}>{t.left}</span>
+                <span className={t.lean === "right" ? "font-semibold text-fg" : "text-faint"}>{t.right}</span>
+              </div>
+              <div className="relative mt-1 h-1.5 rounded-full bg-line-2">
+                {known && <span className="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sponsor ring-2 ring-white" style={{ left: `${pos}%` }} />}
+              </div>
+            </div>);
+          return <div key={t.left}>{known ? <Tooltip content={<span>"{t.quote}"{s?.title ? ` (${s.title})` : ""}</span>}>{s?.url ? <a href={s.url} target="_blank" rel="noreferrer" className="block">{row}</a> : row}</Tooltip>
+            : <Tooltip content="Not enough of their own words to tell">{row}</Tooltip>}</div>;
+        })}
+      </div>
+      {(p.values?.length > 0 || p.interests?.length > 0) && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {(p.values || []).map((x: any) => <Badge key={"v" + x.text} tone="violet">{x.text}</Badge>)}
+          {(p.interests || []).map((x: any) => <Badge key={"i" + x.text} tone="gray">{x.text}</Badge>)}
+        </div>)}
+      {p.how_to_write?.length > 0 && (
+        <div className="mt-3"><div className="mb-1 text-[11.5px] font-semibold text-muted">Write for this personality</div>
+          <ul className="space-y-0.5 text-[12.5px]">{p.how_to_write.map((x: string) => <li key={x} className="flex gap-1.5"><span className="text-faint">·</span>{x}</li>)}</ul></div>)}
+    </div>
+  );
+}
 
 function VoiceCard({ v }: { v: any }) {
   if (!v) return null;

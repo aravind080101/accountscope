@@ -95,6 +95,50 @@ SOURCE_FAMILIES = [
 ]
 
 
+# Personality, read only from what the person wrote or said themselves. (key, left pole, right pole, what to look for)
+TRAITS = [
+    ("thinking", "Analytical", "Intuitive", "argues with data and numbers, or with gut feel and stories"),
+    ("horizon", "Visionary", "Pragmatic", "talks about the future and big bets, or execution and what works today"),
+    ("drive", "Builder", "Guardian", "excited by creating new things, or by stability, control and reducing risk"),
+    ("stance", "Contrarian", "Consensus", "challenges popular opinions, or goes along with them"),
+    ("risk", "Risk-taker", "Cautious", "early adopter of new tech and ideas, or wants proof first"),
+    ("directness", "Direct", "Diplomatic", "blunt and to the point, or polite and careful with words"),
+    ("formality", "Formal", "Casual", "structured professional tone, or relaxed with humour and emoji"),
+    ("focus", "Detail", "Big-picture", "deep in specifics, or focused on outcomes"),
+    ("orientation", "Competitive", "Collaborative", "talks about winning and beating rivals, or partnerships and team credit"),
+    ("credit", "Self-promoting", "Team-crediting", "says 'I achieved', or 'my team delivered'"),
+    ("certainty", "Curious", "Certain", "asks questions and invites debate, or states firm conclusions"),
+    ("outlook", "Optimistic", "Sceptical", "hopeful about trends, or quick to point out what's wrong"),
+    ("presence", "Extrovert", "Introvert", "posts often, speaks on stages and engages a lot, or posts rarely and thoughtfully"),
+]
+TRAIT_KEYS = {k for k, *_ in TRAITS}
+
+
+def _clean_personality(raw, sources: list[dict]) -> dict:
+    """Keep only readings backed by a first-hand source; everything else becomes 'unknown'."""
+    raw = raw if isinstance(raw, dict) else {}
+    first_hand = {i for i, r in enumerate(sources) if r.get("pasted") or r.get("voice_value") in ("unscripted", "written")}
+    traits = {}
+    for key, left, right, _ in TRAITS:
+        t = raw.get("traits", {}).get(key) if isinstance(raw.get("traits"), dict) else None
+        t = t if isinstance(t, dict) else {}
+        lean = t.get("lean") if t.get("lean") in ("left", "right", "balanced") else "unknown"
+        if lean != "unknown" and (t.get("source") not in first_hand or not t.get("quote")):
+            lean = "unknown"  # no first-hand words behind it: don't guess
+        traits[key] = {"left": left, "right": right, "lean": lean,
+                       "strength": t.get("strength") if t.get("strength") in (1, 2, 3) and lean in ("left", "right") else None,
+                       "quote": t.get("quote") if lean != "unknown" else None,
+                       "source": t.get("source") if lean != "unknown" else None}
+
+    def backed(items):
+        return [x for x in (items or []) if isinstance(x, dict) and x.get("text") and x.get("source") in first_hand][:5]
+    known = sum(1 for t in traits.values() if t["lean"] != "unknown")
+    return {"traits": traits, "values": backed(raw.get("values")), "interests": backed(raw.get("interests")),
+            "summary": raw.get("summary") if known else None,
+            "how_to_write": [x for x in (raw.get("how_to_write") or []) if isinstance(x, str)][:4] if known else [],
+            "known": known}
+
+
 def search_plan(name: str, company: str, title: str, domain: str | None = None) -> list[tuple]:
     """The web searches a brief runs for this person (also used to estimate its cost)."""
     aliases = company_aliases(company, title)
@@ -111,7 +155,8 @@ def needs_rebuild(person_id: int, force: bool = False) -> bool:
     """Would build() search the web again (rather than reuse the saved brief)?"""
     existing = get(person_id)
     return bool(force or not existing or not _fresh(existing["created_at"])
-                or existing.get("samples_used", 0) != len(samples(person_id)))
+                or existing.get("samples_used", 0) != len(samples(person_id))
+                or "personality" not in existing)  # built before personality reading existed
 
 
 def gather(name: str, company: str, title: str, domain: str | None = None) -> list[dict]:
@@ -173,7 +218,7 @@ def delete_sample(sample_id: int) -> None:
 def build(person_id: int, force: bool = False) -> dict:
     existing = get(person_id)
     pasted = samples(person_id)
-    if existing and not force and _fresh(existing["created_at"]) and existing.get("samples_used", 0) == len(pasted):
+    if existing and not needs_rebuild(person_id, force):
         return existing
     p = _person(person_id)
     if "*" in p["full_name"]:
@@ -196,6 +241,7 @@ def build(person_id: int, force: bool = False) -> dict:
     listing = "\n\n".join(f"[{i}] {kind.get(r.get('voice_value'), 'THEIR OWN WORDS (pasted by the user)' if r.get('pasted') else 'OTHER')} | "
                           f"{r['title']} ({r.get('published_at') or 'undated'})\n{r['url'] or 'pasted by the user'}\n{r['text'][:2200]}"
                           for i, r in enumerate(sources)) or "(no public statements found)"
+    trait_guide = "\n".join(f"    {k}: {a} / {b} ({hint})" for k, a, b, hint in TRAITS)
     prompt = f"""Person: {p['full_name']}, {p.get('title') or 'title unknown'} at {p['company']}
 Their initiatives in our research: {json.dumps(roles) if roles else 'none linked'}
 We sell: {seller.get('description', '')} Offerings: {', '.join(o['name'] for o in seller.get('offerings', []))}
@@ -234,15 +280,28 @@ Return {{
   "mirror": [3-5 concrete rules for writing to them, e.g. "two sentences max", "lead with a number", "no exclamation marks"],
   "avoid": [2-3 tone mistakes that would put them off]
 }}  // if there are no first-hand texts, set samples 0 and give only cautious role-based defaults in mirror,
+"personality": {{  // judged ONLY from first-hand sources (their own talks, posts, comments, pasted text). Never from
+                  // photos, appearance, dress, name, gender, age, nationality; never health, religion, politics or family.
+  "traits": {{ for each key below: {{"lean": "left" | "right" | "balanced" | "unknown", "strength": 1 (slight) | 2 | 3 (strong),
+             "quote": their exact short words that show it, "source": source number}}. Use "unknown" unless a first-hand
+             source clearly shows it. Keys (left / right: what to look for):
+{trait_guide}
+  }},
+  "values": [{{"text": something they repeatedly care about (mentoring, quality, customers...), "source": n}}],
+  "interests": [{{"text": an interest outside work they mention themselves (sport, books, a community), "source": n}}],
+  "summary": one sentence on their personality at work, only from the traits you could read,
+  "how_to_write": [2-4 rules that follow from their personality, e.g. "challenge an assumption, they like debate"]
+}},
 "confidence": "high" if 3+ first-hand sources, "medium" if 1-2, "low" if none
 }}"""
-    brief = llm.complete_json(SYSTEM, prompt, 2500)
+    brief = llm.complete_json(SYSTEM, prompt, 4000)
     if not isinstance(brief, dict):
         raise RuntimeError("The AI did not return a brief")
     brief["sources"] = [{"n": i, "url": r["url"], "title": r["title"], "published_at": r.get("published_at"),
                          "pasted": bool(r.get("pasted")), "family": r.get("family") or ("pasted" if r.get("pasted") else None),
                          "voice_value": r.get("voice_value")} for i, r in enumerate(sources)]
     brief["samples_used"] = len(pasted)
+    brief["personality"] = _clean_personality(brief.get("personality"), sources)
     if not isinstance(brief.get("voice"), dict):
         brief["voice"] = {"samples": 0}
     if not pasted and not brief.get("first_hand"):

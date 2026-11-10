@@ -327,6 +327,13 @@ def _buyer_block(ctx: dict, brief: dict) -> str:
                  f"Write to them like this: {'; '.join(v.get('mirror') or [])}. Tone to avoid: {'; '.join(v.get('avoid') or [])}.")
     else:
         voice = "unknown (no first-hand writing found): keep it short, neutral and plain; no hype, no exclamation marks."
+    pers = brief.get("personality") or {}
+    read = [f"{t[t['lean']] if t['lean'] in ('left', 'right') else 'balanced between ' + t['left'] + ' and ' + t['right']}"
+            + (f" (strongly)" if t.get("strength") == 3 else "") + (f": \"{t['quote']}\"" if t.get("quote") else "")
+            for t in (pers.get("traits") or {}).values() if t.get("lean") not in (None, "unknown")]
+    personality = ("; ".join(read) + (f". Values: {', '.join(x['text'] for x in pers.get('values') or [])}" if pers.get("values") else "")
+                   + (f". Write for this personality: {'; '.join(pers.get('how_to_write') or [])}" if pers.get("how_to_write") else "")) \
+        if read else "unknown (nothing first-hand to judge from): don't assume a personality"
     return f"""PERSON: {p['full_name']}, {p.get('title') or 'title unknown'} at {p['company']} ({p.get('industry') or ''}, {p.get('hq_country') or ''})
 Company: {p.get('company_summary') or ''}
 What they have said themselves:
@@ -340,7 +347,8 @@ Their company's work they are linked to:
 {works}
 Company tech: {', '.join(ctx['tech'][:20]) or 'unknown'}
 Vendors and partners: {vendors}
-HOW THEY COMMUNICATE: {voice}"""
+HOW THEY COMMUNICATE: {voice}
+PERSONALITY (from their own words): {personality}"""
 
 
 def strategize(ctx: dict, brief: dict, profile: dict, trig: dict | None = None) -> dict:

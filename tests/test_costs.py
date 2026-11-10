@@ -36,7 +36,7 @@ def test_cost_estimates():
 
     # a saved, fresh brief means no search credits
     with db.session() as s:
-        s.execute("INSERT INTO buyer_brief(person_id, brief, sources) VALUES (?,?,?)", (a, json.dumps({"summary": "x", "samples_used": 0}), "[]"))
+        s.execute("INSERT INTO buyer_brief(person_id, brief, sources) VALUES (?,?,?)", (a, json.dumps({"summary": "x", "samples_used": 0, "personality": {}}), "[]"))
     p2 = c.get(f"/api/people/{a}/cost?action=pitch", headers=H).json()
     assert not any(l["service"] == "Tavily" for l in p2["lines"]) and any("Reuses" in n for n in p2["notes"])
 
@@ -50,3 +50,27 @@ def test_pitch_list_has_email():
     pid = pitch.create(b)
     rows = pitch.list_all(cid, 1)
     assert any(r["id"] == pid and r["email"] == "ben@costco.example" for r in rows)
+
+
+def test_personality_needs_their_own_words():
+    from backend import buyers, pitch
+    sources = [{"voice_value": "written"}, {"voice_value": "quoted"}, {"pasted": True}]
+    raw = {"traits": {
+        "thinking": {"lean": "left", "strength": 3, "quote": "Show me the defect leakage numbers", "source": 0},
+        "risk": {"lean": "right", "strength": 2, "quote": "we waited for proof", "source": 1},     # press quote: not enough
+        "stance": {"lean": "left", "strength": 2, "source": 2},                                   # no quote: not enough
+        "formality": {"lean": "right", "strength": 1, "quote": "folks, quick one", "source": 2}},
+        "values": [{"text": "Mentoring testers", "source": 0}, {"text": "Golf", "source": None}],
+        "interests": [{"text": "Marathons", "source": 2}],
+        "summary": "Numbers-first and informal.", "how_to_write": ["Lead with a metric"]}
+    p = buyers._clean_personality(raw, sources)
+    assert p["traits"]["thinking"]["lean"] == "left" and p["traits"]["thinking"]["strength"] == 3
+    assert p["traits"]["risk"]["lean"] == "unknown" and p["traits"]["stance"]["lean"] == "unknown"
+    assert p["traits"]["formality"]["lean"] == "right" and p["known"] == 2
+    assert [v["text"] for v in p["values"]] == ["Mentoring testers"] and p["interests"][0]["text"] == "Marathons"
+    assert len(p["traits"]) == len(buyers.TRAITS) == 13
+
+    ctx = {"person": {"full_name": "A B", "title": "CIO", "company": "X"}, "works": [], "tech": [], "vendors": []}
+    block = pitch._buyer_block(ctx, {"personality": p})
+    assert "Analytical (strongly)" in block and "Casual" in block and "Lead with a metric" in block
+    assert "don't assume a personality" in pitch._buyer_block(ctx, {})

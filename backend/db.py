@@ -526,10 +526,10 @@ def rows(cur) -> list[dict]:
 
 
 def append_log(run_id: int, message: str) -> None:
+    # One statement (not read, then write): on D1 every statement is a trip over the internet.
     with session() as s:
-        log = json.loads(s.execute("SELECT log FROM run WHERE id=?", (run_id,)).fetchone()["log"])
-        log.append(config.redact(message))
-        s.execute("UPDATE run SET log=? WHERE id=?", (json.dumps(log), run_id))
+        s.execute("UPDATE run SET log=json_insert(COALESCE(log, '[]'), '$[#]', ?) WHERE id=?",
+                  (config.redact(message), run_id))
 
 
 def kept_initiatives(company_id: int) -> list[dict]:

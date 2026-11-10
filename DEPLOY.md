@@ -58,6 +58,11 @@ deploys the Cloudflare Worker (which serves the screens and your link).
 - The screens are served by Cloudflare itself, so the app opens instantly.
 - The scheduler pings the app server every 10 minutes, so Render's free plan never puts it to sleep
   (one always-on server fits in Render's 750 free hours a month).
+- The busiest read-only screens (accounts list, an account's page, research progress, home summary, alerts) are
+  answered by the Worker itself, right next to D1, in two or three batched queries (`cloudflare/fast.ts`).
+  Through the app server the same page took ~30 queries, each a trip over the internet. Responses from the
+  Worker carry the header `x-served-by: worker`. If one of these handlers fails, the request goes to the app
+  server as before.
 - Database reads are remembered for 20 seconds (any change clears them), because every query to D1 is a trip
   over the internet. Set `D1_CACHE_SECONDS` in Render to change it, or `0` to turn it off.
 

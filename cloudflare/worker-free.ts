@@ -10,15 +10,20 @@
  *   shared INTERNAL_TOKEN.
  * - The app's screens (frontend-react/dist) are served by Cloudflare itself as static assets, before this code
  *   runs: fast, free, and they load even while the app server is waking up. Only /api calls reach Render.
+ * - The busiest read-only screens (accounts list, an account's page, run progress, home summary, alerts) are
+ *   answered here straight from D1 (cloudflare/fast.ts) instead of by the app, which would reach D1 over the
+ *   internet one query at a time. Anything those handlers can't answer still goes to the app.
  * - The Cron Trigger keeps the app awake (pinged every 10 minutes) and starts due watch runs every 6 hours.
  */
 import { DurableObject } from "cloudflare:workers";
 import { runStatements, type Statement } from "./d1";
+import { fastRoute } from "./fast";
 
 interface Env {
   DB: D1Database;
   APP_ORIGIN?: string; // e.g. https://accountscope.onrender.com
   INTERNAL_TOKEN?: string;
+  WATCH_INTERVAL_DAYS?: string;
 }
 
 // Left over from the first (container) deploy attempt; kept so that deploy needs no migration.
@@ -69,6 +74,9 @@ export default {
         return Response.json({ error: err instanceof Error ? err.message : String(err) });
       }
     }
+
+    const fast = await fastRoute(request, env);
+    if (fast) return fast;
 
     if (!origin(env)) return SETUP_PAGE("The app address (APP_ORIGIN) isn't set yet. Run scripts/deploy_free.py.");
 
