@@ -24,6 +24,7 @@ export default function CompanyPage({ id, tab, refresh, health }: any) {
   const { data: d, reload, error } = useApi<any>(`/api/accounts/${id}`, [], busyFn, 2000);
   const [brief, setBrief] = useState<any>(null);
   const [pitchFor, setPitchFor] = useState<any>(null);
+  const [starting, setStarting] = useState(false); // blocks repeat clicks while the server is slow to answer
   useEffect(() => { const f = (e: any) => setPitchFor(e.detail); addEventListener("as:pitch", f); return () => removeEventListener("as:pitch", f); }, []);
   const wasBusy = useMemo(() => busyFn(d), [d]);
   useEffect(() => { if (d && !wasBusy) refresh?.(); /* refresh sidebar when a run finishes */ }, [wasBusy]); // eslint-disable-line
@@ -31,7 +32,7 @@ export default function CompanyPage({ id, tab, refresh, health }: any) {
   if (error) return <div className="p-8"><Empty title="Couldn't load this account">{error}</Empty></div>;
   if (!d) return <div className="space-y-3 p-8"><Skeleton className="h-8 w-64" /><Skeleton className="h-4 w-96" /><Skeleton className="mt-6 h-40 w-full" /></div>;
 
-  const c = d.company, run = d.run, busy = busyFn(d);
+  const c = d.company, run = d.run, busy = busyFn(d) || starting;
   const setTab = (t: string) => go(`/a/${id}/${t}`);
   const act = async (fn: () => Promise<any>, ok?: string) => { try { await fn(); ok && toast.success(ok); await reload(); refresh?.(); } catch (e: any) { toast.error(/not found/i.test(e.message) ? "That list was out of date and has been refreshed. Try again." : e.message); await reload(); } };
 
@@ -62,7 +63,7 @@ export default function CompanyPage({ id, tab, refresh, health }: any) {
             <Tooltip content="The agent writes pitches for the top 5 contacts on strong-fit initiatives and projects">
               <Button variant="outline" size="sm" disabled={busy} onClick={async () => { if (!(await confirmCost(`/api/accounts/${id}/pitches/cost?limit=5&min_fit=0.5`, "Write pitches for this account's top contacts?", "Write pitches"))) return; act(async () => { const r = await post(`/api/accounts/${id}/pitches`, { limit: 5, min_fit: 0.5 }); toast.success(`Writing ${r.queued} pitches. Follow them in Outreach.`); go("/outreach"); }); }}><Wand2 />Write pitches</Button>
             </Tooltip>
-            <Button variant="outline" size="sm" disabled={busy} onClick={() => act(() => post(`/api/accounts/${id}/refresh?force=true`))}>
+            <Button variant="outline" size="sm" disabled={busy} onClick={async () => { setStarting(true); try { await act(() => post(`/api/accounts/${id}/refresh?force=true`)); } finally { setStarting(false); } }}>
               {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}{busy ? "Researching" : "Research again"}
             </Button>
             <Menu><MenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="More"><MoreHorizontal /></Button></MenuTrigger>

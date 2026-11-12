@@ -229,3 +229,53 @@ def test_leaders_named_anywhere_become_contacts_and_apollo_errors_are_logged(mon
     assert apollo._search_people("x.com", ["CTO"], 5) == []
     assert "master" in apollo.last_error and "plan" in apollo.last_error
     assert pipeline.domain_from_sources("HDFC Bank", [{"url": "https://www.hdfcbank.com/a"}, {"url": "https://news.example/hdfc"}]) == "hdfcbank.com"
+
+
+def _stuck_runs(cid: int, n: int, minutes_ago: int) -> list[int]:
+    from backend import db
+    with db.session() as s:
+        return [s.execute(
+            f"""INSERT INTO run(company_id, status, started_at, updated_at)
+                VALUES (?, 'running', datetime('now','-{minutes_ago} minutes'), datetime('now','-{minutes_ago} minutes'))""",
+            (cid,)).lastrowid for _ in range(n)]
+
+
+def test_dead_runs_stop_spinning(connected):
+    """Runs whose server died (19 HDFC runs, Nov 2026) are failed instead of showing "Researching" forever."""
+    from backend import db
+    cid = client.post("/api/accounts", json={"name": "Stuck Bank"}).json()["company_id"]
+    _stuck_runs(cid, 3, minutes_ago=60)
+    assert db.fail_stale_runs(cid) == 3
+    run = client.get(f"/api/accounts/{cid}").json()["run"]
+    assert run["status"] == "failed" and "Research again" in run["error"]
+
+
+def test_live_run_is_not_failed(connected):
+    from backend import db
+    cid = client.post("/api/accounts", json={"name": "Busy Bank"}).json()["company_id"]
+    live = _stuck_runs(cid, 1, minutes_ago=1)[0]
+    assert db.fail_stale_runs(cid) == 0
+    # clicking Research again while it runs returns the same run instead of starting another
+    assert client.post(f"/api/accounts/{cid}/refresh?force=true").json()["run_id"] == live
+    with db.session() as s:
+        assert s.execute("SELECT COUNT(*) n FROM run WHERE company_id=? AND status IN ('queued','running')",
+                         (cid,)).fetchone()["n"] == 1
+
+
+def test_restart_fails_leftover_runs(connected):
+    from backend import db
+    cid = client.post("/api/accounts", json={"name": "Restart Bank"}).json()["company_id"]
+    _stuck_runs(cid, 2, minutes_ago=0)
+    assert db.fail_interrupted_runs() >= 2
+    assert client.get(f"/api/accounts/{cid}").json()["run"]["status"] == "failed"
+
+
+def test_heartbeat_keeps_queued_runs_alive(connected, monkeypatch):
+    import time
+    from backend import db
+    cid = client.post("/api/accounts", json={"name": "Queue Bank"}).json()["company_id"]
+    rid = _stuck_runs(cid, 1, minutes_ago=60)[0]
+    monkeypatch.setattr(pipeline.threading.Event, "wait", lambda self, t=None: (time.sleep(0.05), self.is_set())[1])
+    with pipeline.keep_alive([rid]):
+        time.sleep(0.3)
+    assert db.fail_stale_runs(cid) == 0  # touched while waiting, so not mistaken for dead

@@ -93,8 +93,28 @@ function groupBy(rows: Row[], key: string): Map<number, Row[]> {
 
 // ------------------------------------------------------------------ routes
 
+// Keep in step with backend/db.py STALE_MINUTES / INTERRUPTED. A live research run touches run.updated_at every
+// minute; one silent for longer died with its server (memory limit, redeploy), so stop showing "Researching".
+const STALE_MINUTES = 5;
+const INTERRUPTED = "Research stopped because the app server restarted while it was running " +
+  "(an update or the free server's memory limit). Click Research again.";
+
+async function failStaleRuns(db: D1Database, wid: number): Promise<void> {
+  try {
+    await db.prepare(
+      `UPDATE run SET status='failed', error=?, finished_at=CURRENT_TIMESTAMP
+       WHERE status IN ('queued','running')
+         AND COALESCE(updated_at, started_at) < datetime('now', '-${STALE_MINUTES} minutes')
+         AND company_id IN (SELECT id FROM company WHERE workspace_id=?)`,
+    ).bind(INTERRUPTED, wid).run();
+  } catch {
+    // never break a page over this (e.g. the updated_at column not added yet)
+  }
+}
+
 /** GET /api/accounts */
 async function listAccounts(db: D1Database, wid: number) {
+  await failStaleRuns(db, wid);
   const [companies, best] = await batch(db, [
     db.prepare(
       `SELECT c.id, c.name, c.domain, c.industry, c.hq_country, c.watch, c.last_researched_at,
@@ -134,6 +154,7 @@ async function listAccounts(db: D1Database, wid: number) {
 
 /** GET /api/accounts/{cid} */
 async function accountDetail(db: D1Database, wid: number, cid: number, env: FastEnv) {
+  await failStaleRuns(db, wid);
   const [companyRows, inits, dismissed, runRows, docs, unread, mix, projs] = await batch(db, [
     db.prepare("SELECT * FROM company WHERE id=? AND workspace_id=?").bind(cid, wid),
     db.prepare(
@@ -213,6 +234,7 @@ async function accountDetail(db: D1Database, wid: number, cid: number, env: Fast
 
 /** GET /api/runs/{rid} */
 async function runStatus(db: D1Database, wid: number, rid: number) {
+  await failStaleRuns(db, wid);
   const r = await db
     .prepare("SELECT r.* FROM run r JOIN company c ON c.id=r.company_id WHERE r.id=? AND c.workspace_id=?")
     .bind(rid, wid)

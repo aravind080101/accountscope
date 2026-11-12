@@ -463,6 +463,7 @@ MIGRATIONS = {
     "seller_doc": [("workspace_id", "INTEGER NOT NULL DEFAULT 1")],
     "feedback": [("workspace_id", "INTEGER NOT NULL DEFAULT 1")],
     "document": [("fetched_at", "TEXT")],
+    "run": [("updated_at", "TEXT")],
     "person": [("function", "TEXT"), ("reports_to", "TEXT"), ("reports_to_source", "TEXT"), ("document_id", "INTEGER")],
     "initiative": [("feedback", "TEXT"), ("basis", "TEXT")],
     "vendor": [("deal_type", "TEXT"), ("deal_value", "TEXT"), ("deal_date", "TEXT"), ("duration", "TEXT"), ("scope", "TEXT")],
@@ -521,6 +522,55 @@ def init() -> None:
             s.execute("INSERT INTO workspace(id, name) VALUES (1, ?)", (name,))
 
 
+# A research run in progress touches run.updated_at at least once a minute (pipeline heartbeat). A run that has
+# been silent longer than this lived in a server process that died (out of memory, redeploy), so it is failed.
+STALE_MINUTES = 5
+INTERRUPTED = ("Research stopped because the app server restarted while it was running "
+               "(an update or the free server's memory limit). Click Research again.")
+
+
+def touch_runs(run_ids: list[int]) -> None:
+    if not run_ids:
+        return
+    marks = ",".join("?" * len(run_ids))
+    with session() as s:
+        s.execute(f"UPDATE run SET updated_at=CURRENT_TIMESTAMP WHERE id IN ({marks}) AND status IN ('queued','running')",
+                  tuple(run_ids))
+
+
+def fail_stale_runs(company_id: int | None = None) -> int:
+    """Mark research runs that stopped sending heartbeats as failed, so the page stops showing "Researching"."""
+    sql = f"""UPDATE run SET status='failed', error=?, finished_at=CURRENT_TIMESTAMP
+              WHERE status IN ('queued','running')
+                AND COALESCE(updated_at, started_at) < datetime('now', '-{STALE_MINUTES} minutes')"""
+    args: tuple = (INTERRUPTED,)
+    if company_id is not None:
+        sql += " AND company_id=?"
+        args += (company_id,)
+    with session() as s:
+        return s.execute(sql, args).rowcount or 0
+
+
+def fail_interrupted_runs() -> int:
+    """At start-up nothing from the previous process can still be running: fail its research and pitch jobs."""
+    with session() as s:
+        n = s.execute("""UPDATE run SET status='failed', error=?, finished_at=CURRENT_TIMESTAMP
+                         WHERE status IN ('queued','running')""", (INTERRUPTED,)).rowcount or 0
+        s.execute("""UPDATE pitch SET status='failed', error=?, updated_at=CURRENT_TIMESTAMP
+                     WHERE status IN ('queued','running')""",
+                  ("Stopped because the app server restarted. Write the pitch again.",))
+    return n
+
+
+def active_run(company_id: int) -> int | None:
+    """The id of a live research run for this company, if there is one."""
+    fail_stale_runs(company_id)
+    with session() as s:
+        r = s.execute("SELECT id FROM run WHERE company_id=? AND status IN ('queued','running') ORDER BY id DESC LIMIT 1",
+                      (company_id,)).fetchone()
+    return r["id"] if r else None
+
+
 def rows(cur) -> list[dict]:
     return [dict(r) for r in cur.fetchall()]
 
@@ -528,7 +578,7 @@ def rows(cur) -> list[dict]:
 def append_log(run_id: int, message: str) -> None:
     # One statement (not read, then write): on D1 every statement is a trip over the internet.
     with session() as s:
-        s.execute("UPDATE run SET log=json_insert(COALESCE(log, '[]'), '$[#]', ?) WHERE id=?",
+        s.execute("UPDATE run SET log=json_insert(COALESCE(log, '[]'), '$[#]', ?), updated_at=CURRENT_TIMESTAMP WHERE id=?",
                   (config.redact(message), run_id))
 
 

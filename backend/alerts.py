@@ -16,6 +16,7 @@ from .taxonomy import STAGES
 
 
 def _jobs_last_30d(s, company_id: int) -> int:
+    db.fail_stale_runs()  # a dead run must not block its account's watch forever
     cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
     return s.execute(
         """SELECT COUNT(*) n FROM document WHERE company_id=? AND source_type='jobs'
@@ -83,7 +84,7 @@ def refresh_due(run_fn) -> int:
     ids = due_accounts()
     for cid in ids:
         with db.session() as s:
-            rid = s.execute("INSERT INTO run(company_id) VALUES (?)", (cid,)).lastrowid
+            rid = s.execute("INSERT INTO run(company_id, updated_at) VALUES (?, CURRENT_TIMESTAMP)", (cid,)).lastrowid
         run_fn(rid, cid, force=True)
     return len(ids)
 

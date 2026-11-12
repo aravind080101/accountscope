@@ -18,6 +18,7 @@ from .taxonomy import CATEGORIES
 FRONTEND = config.ROOT / "frontend"
 db.init()
 auth.bootstrap()
+db.fail_interrupted_runs()  # runs from a previous process died with it
 
 
 @asynccontextmanager
@@ -218,11 +219,14 @@ def _require_keys():
 
 def _queue_run(company_id: int) -> int:
     with db.session() as s:
-        return s.execute("INSERT INTO run(company_id) VALUES (?)", (company_id,)).lastrowid
+        return s.execute("INSERT INTO run(company_id, updated_at) VALUES (?, CURRENT_TIMESTAMP)", (company_id,)).lastrowid
 
 
 def _start_run(company_id: int, tasks: BackgroundTasks, force: bool = False) -> int:
     _require_keys()
+    live = db.active_run(company_id)
+    if live:  # already researching (e.g. the button was clicked several times while the server was slow)
+        return live
     run_id = _queue_run(company_id)
     tasks.add_task(pipeline.run, run_id, company_id, force)
     return run_id
@@ -286,11 +290,14 @@ def add_accounts_bulk(body: BulkIn, tasks: BackgroundTasks):
     for c in body.companies:
         if c.name.strip():
             cid = _upsert_company(c.name, c.domain)
+            if db.active_run(cid):  # already being researched
+                continue
             jobs.append((_queue_run(cid), cid))
 
     def run_all():
-        for run_id, cid in jobs:
-            pipeline.run(run_id, cid)
+        with pipeline.keep_alive([rid for rid, _ in jobs]):  # queued ones wait their turn without being failed
+            for run_id, cid in jobs:
+                pipeline.run(run_id, cid)
 
     tasks.add_task(run_all)
     return {"queued": len(jobs), "company_ids": [cid for _, cid in jobs]}

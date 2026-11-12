@@ -8,6 +8,8 @@ Uses Tavily (search), an LLM - Claude or GPT - (extraction, company profile, ope
 (people) and optionally BuiltWith (website tech stack).
 """
 import json
+import threading
+from contextlib import contextmanager
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -597,14 +599,34 @@ def _save_locations(company_id: int, extracted: dict, key_to_id: dict) -> None:
 
 def run(run_id: int, company_id: int, force: bool = False) -> None:
     """Research one account, inside that account's workspace."""
-    with tenancy.use(tenancy.of_company(company_id) or 1):
+    with keep_alive([run_id]), tenancy.use(tenancy.of_company(company_id) or 1):
         _run(run_id, company_id, force)
+
+
+@contextmanager
+def keep_alive(run_ids: list[int]):
+    """Touch these runs once a minute while this process works on them (running or waiting in a queue).
+    If the process dies the touches stop, and db.fail_stale_runs marks the runs failed instead of spinning forever."""
+    stop = threading.Event()
+
+    def beat() -> None:
+        while not stop.wait(60):
+            try:
+                db.touch_runs(run_ids)
+            except Exception:
+                pass
+
+    threading.Thread(target=beat, daemon=True).start()
+    try:
+        yield
+    finally:
+        stop.set()
 
 
 def _run(run_id: int, company_id: int, force: bool = False) -> None:
     log = lambda m: db.append_log(run_id, m)  # noqa: E731
     with db.session() as s:
-        s.execute("UPDATE run SET status='running' WHERE id=?", (run_id,))
+        s.execute("UPDATE run SET status='running', updated_at=CURRENT_TIMESTAMP WHERE id=?", (run_id,))
         company = dict(s.execute("SELECT * FROM company WHERE id=?", (company_id,)).fetchone())
     try:
         if not config.configured():
