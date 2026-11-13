@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/input";
 import { SheetContent } from "@/components/ui/dialog";
 import { Avatar } from "@/components/ui/misc";
-import { Samples } from "@/components/BriefSheet";
+import { Samples, txt } from "@/components/BriefSheet";
 
 const MSGS: { k: string; label: string; limit?: number; hint: string }[] = [
   { k: "connection_note", label: "Connection note", limit: 280, hint: "Sent with the invite. The hook, nothing to sell." },
@@ -92,7 +92,7 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
                   {d.angle?.offer && <Badge tone="saffron">Offer once they reply: {d.angle.offer}</Badge>}
                 </div>
                 {d.angle?.evidence && <q className="mt-2 block border-l-2 border-saffron pl-3 text-[12.5px] text-muted">{d.angle.evidence}</q>}
-                {d.research?.voice?.samples > 0 && <p className="mt-2 text-[12.5px] text-muted"><b className="font-medium text-fg">Their voice:</b> {d.research.voice.summary} {(d.research.voice.mirror || []).join(" · ")}</p>}
+                {d.research?.voice?.samples > 0 && <p className="mt-2 text-[12.5px] text-muted"><b className="font-medium text-fg">Their voice:</b> {d.research.voice.summary} {(d.research.voice.mirror || []).map(txt).join(" · ")}</p>}
                 <dl className="mt-3 grid gap-2 text-[13px] sm:grid-cols-2">
                   <div><dt className="text-[11.5px] font-semibold text-muted">Technical insight</dt><dd>{d.angle?.technical_insight}</dd></div>
                   <div><dt className="text-[11.5px] font-semibold text-muted">Why they'd care</dt><dd>{d.angle?.why_they_care}</dd></div>

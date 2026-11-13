@@ -117,6 +117,10 @@ function RunProgress({ run, name }: any) {
 
 /* ------------------------------------------------------------ Initiatives */
 
+const LEADER = /\b(ceo|cto|cio|coo|cfo|ciso|cdo|chief|managing director|md|chair(man|person)?|president|founder|head|director|vp|vice president|evp|svp)\b/i;
+const leaderRank = (p: any) => (p.has_brief ? 0 : 10) + (/\b(ceo|managing director|md|founder|chair)/i.test(p.title || "") ? 0
+  : /\b(chief|cto|cio|coo|cfo|ciso|cdo|president)\b/i.test(p.title || "") ? 1 : 2);
+
 function InitiativesTab({ d, reload, act, onBrief, seller }: any) {
   const c = d.company;
   const [open, setOpen] = useState<Record<number, boolean>>(() => (d.initiatives[0] ? { [d.initiatives[0].id]: true } : {}));
@@ -124,7 +128,12 @@ function InitiativesTab({ d, reload, act, onBrief, seller }: any) {
     const m = new Map<string, any>();
     d.initiatives.forEach((i: any) => i.contacts.filter((p: any) => p.feedback !== "rejected" && ["Owner", "Sponsor"].includes(p.role))
       .forEach((p: any) => { if (!m.has(p.full_name)) m.set(p.full_name, { ...p, projects: [i.name] }); else m.get(p.full_name).projects.push(i.name); }));
-    return [...m.values()].sort((a, b) => (a.role === "Owner" ? -1 : 1) - (b.role === "Owner" ? -1 : 1) || b.score - a.score).slice(0, 8);
+    const linked = [...m.values()].sort((a, b) => (a.role === "Owner" ? -1 : 1) - (b.role === "Owner" ? -1 : 1) || b.score - a.score).slice(0, 8);
+    // Top leaders and anyone with a brief show too, even when no initiative names them (e.g. a new CEO)
+    const seen = new Set(linked.map((p) => p.full_name));
+    const leaders = (d.people || []).filter((p: any) => !seen.has(p.full_name) && (p.has_brief || LEADER.test(p.title || "")))
+      .sort((a: any, b: any) => leaderRank(a) - leaderRank(b)).slice(0, 6).map((p: any) => ({ ...p, role: "Leader" }));
+    return [...linked, ...leaders];
   }, [d]);
   const mix = Object.entries(d.source_mix || {}).sort((a: any, b: any) => b[1] - a[1]) as [string, number][];
   const maxMix = Math.max(1, ...mix.map(([, n]) => n));
@@ -145,7 +154,8 @@ function InitiativesTab({ d, reload, act, onBrief, seller }: any) {
               <button key={p.full_name} onClick={() => onBrief(p)} className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-canvas">
                 <Avatar name={p.full_name} size={28} />
                 <div className="min-w-0 flex-1"><div className="truncate font-medium">{p.full_name}</div><div className="truncate text-[12px] text-faint">{p.title}</div></div>
-                <Badge tone={ROLE_TONE[p.role]}>{p.role}</Badge>
+                {p.has_brief && <Tooltip content="Buyer brief ready"><Sparkles className="size-3.5 shrink-0 text-sponsor" /></Tooltip>}
+                <Badge tone={ROLE_TONE[p.role] || "gray"}>{p.role}</Badge>
               </button>
             ))}
           </Panel>

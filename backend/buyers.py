@@ -15,7 +15,10 @@ CACHE_DAYS = 30
 SYSTEM = """You write buyer briefs for B2B sellers from a person's PUBLIC, PROFESSIONAL statements
 (interviews, talks, podcasts, articles, public posts, quotes in news).
 Only use what the sources show; every point must be traceable to a source. If the sources say little,
-say so and keep the brief short. Never speculate about personality disorders, health, family, age,
+say so and keep the brief short. A source can mention other people (a successor, a colleague, a reporter):
+every "quote" must be words THIS person said or wrote, never words said about them or by someone else. A news line
+like "X to take over as MD" is not their words; leave it out. If a source is mainly about someone else, ignore it.
+Never speculate about personality disorders, health, family, age,
 politics, religion, or anything personal. Describe professional priorities and communication style only."""
 
 

@@ -279,3 +279,22 @@ def test_heartbeat_keeps_queued_runs_alive(connected, monkeypatch):
     with pipeline.keep_alive([rid]):
         time.sleep(0.3)
     assert db.fail_stale_runs(cid) == 0  # touched while waiting, so not mistaken for dead
+
+
+def test_account_lists_everyone_found(connected):
+    """Leaders not tied to an initiative (e.g. a new CEO) still come back, so Key people can show them."""
+    cid = client.post("/api/accounts", json={"name": "People Bank", "domain": "bank.test"}).json()["company_id"]
+    people = client.get(f"/api/accounts/{cid}").json()["people"]
+    assert people and all({"person_id", "full_name", "title", "has_brief"} <= set(p) for p in people)
+
+
+def test_run_without_heartbeat_gets_an_hour(connected):
+    """If the app server is an older version that never sends heartbeats, a busy run is not failed at 5 minutes."""
+    from backend import db
+    cid = client.post("/api/accounts", json={"name": "Old Server Bank"}).json()["company_id"]
+    with db.session() as s:
+        s.execute("INSERT INTO run(company_id, status, started_at) VALUES (?, 'running', datetime('now','-20 minutes'))", (cid,))
+    assert db.fail_stale_runs(cid) == 0
+    with db.session() as s:
+        s.execute("INSERT INTO run(company_id, status, started_at) VALUES (?, 'running', datetime('now','-90 minutes'))", (cid,))
+    assert db.fail_stale_runs(cid) == 1

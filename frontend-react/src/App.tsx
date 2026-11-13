@@ -13,6 +13,7 @@ import { CommandPalette, CommandItem, CommandGroup } from "@/components/ui/comma
 import { SellerDialog } from "@/components/SellerDialog";
 import AccountsPage from "@/pages/Accounts";
 import CompanyPage from "@/pages/Company";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import DiscoverPage from "@/pages/Discover";
 import AlertsPage from "@/pages/Alerts";
 import OutreachPage from "@/pages/Outreach";
@@ -77,6 +78,7 @@ function Workspace({ me, onAuthChange, onSignOut }: { me: any; onAuthChange: () 
                 : <>Setup needed: add {health.missing_keys.join(" and ")} to the <code className="rounded bg-white/60 px-1">.env</code> file and restart the app.</>}
             </div>
           )}
+          <ErrorBoundary label="this page" resetKey={JSON.stringify(route)}>
           {route.page === "accounts" && <AccountsPage accounts={accounts} {...ctx} />}
           {route.page === "company" && route.id && <CompanyPage key={route.id} id={route.id} tab={route.tab || "initiatives"} {...ctx} />}
           {route.page === "discover" && <DiscoverPage {...ctx} />}
@@ -84,6 +86,7 @@ function Workspace({ me, onAuthChange, onSignOut }: { me: any; onAuthChange: () 
           {route.page === "outreach" && <OutreachPage />}
           {route.page === "team" && <TeamPage me={me} />}
           {route.page === "workspaces" && <WorkspacesPage me={me} onSwitched={onAuthChange} />}
+          </ErrorBoundary>
         </main>
       </div>
 

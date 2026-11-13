@@ -96,6 +96,7 @@ function groupBy(rows: Row[], key: string): Map<number, Row[]> {
 // Keep in step with backend/db.py STALE_MINUTES / INTERRUPTED. A live research run touches run.updated_at every
 // minute; one silent for longer died with its server (memory limit, redeploy), so stop showing "Researching".
 const STALE_MINUTES = 5;
+const NO_HEARTBEAT_MINUTES = 60; // run started by an app server without the heartbeat (older version)
 const INTERRUPTED = "Research stopped because the app server restarted while it was running " +
   "(an update or the free server's memory limit). Click Research again.";
 
@@ -104,7 +105,8 @@ async function failStaleRuns(db: D1Database, wid: number): Promise<void> {
     await db.prepare(
       `UPDATE run SET status='failed', error=?, finished_at=CURRENT_TIMESTAMP
        WHERE status IN ('queued','running')
-         AND COALESCE(updated_at, started_at) < datetime('now', '-${STALE_MINUTES} minutes')
+         AND ((updated_at IS NOT NULL AND updated_at < datetime('now', '-${STALE_MINUTES} minutes'))
+           OR (updated_at IS NULL AND started_at < datetime('now', '-${NO_HEARTBEAT_MINUTES} minutes')))
          AND company_id IN (SELECT id FROM company WHERE workspace_id=?)`,
     ).bind(INTERRUPTED, wid).run();
   } catch {
@@ -155,7 +157,7 @@ async function listAccounts(db: D1Database, wid: number) {
 /** GET /api/accounts/{cid} */
 async function accountDetail(db: D1Database, wid: number, cid: number, env: FastEnv) {
   await failStaleRuns(db, wid);
-  const [companyRows, inits, dismissed, runRows, docs, unread, mix, projs] = await batch(db, [
+  const [companyRows, inits, dismissed, runRows, docs, unread, mix, projs, people] = await batch(db, [
     db.prepare("SELECT * FROM company WHERE id=? AND workspace_id=?").bind(cid, wid),
     db.prepare(
       `SELECT * FROM initiative WHERE company_id=? AND COALESCE(feedback,'')!='dismissed'
@@ -169,6 +171,10 @@ async function accountDetail(db: D1Database, wid: number, cid: number, env: Fast
     db.prepare(
       `SELECT * FROM project WHERE company_id=? AND COALESCE(feedback,'')!='dismissed'
        ORDER BY feedback='confirmed' DESC, fit_score DESC, COALESCE(last_seen, first_seen) DESC`,
+    ).bind(cid),
+    db.prepare(
+      `SELECT p.id person_id, p.full_name, p.title, p.linkedin_url, p.email,
+       (SELECT 1 FROM buyer_brief b WHERE b.person_id=p.id) has_brief FROM person p WHERE p.company_id=?`,
     ).bind(cid),
   ]);
   const company = companyRows[0];
@@ -226,7 +232,7 @@ async function accountDetail(db: D1Database, wid: number, cid: number, env: Fast
   const run = runRows[0] ? { ...runRows[0], log: parseList(runRows[0].log) } : null;
   const days = parseFloat(env.WATCH_INTERVAL_DAYS || "7");
   return json({
-    company, initiatives: inits, projects: projs, run, documents: docs[0].n, dismissed: dismissed[0].n,
+    company, people, initiatives: inits, projects: projs, run, documents: docs[0].n, dismissed: dismissed[0].n,
     unread_alerts: unread[0].n, source_mix: Object.fromEntries(mix.map((r) => [r.source_type, r.n])),
     watch_every_days: days,
   });

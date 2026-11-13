@@ -525,6 +525,7 @@ def init() -> None:
 # A research run in progress touches run.updated_at at least once a minute (pipeline heartbeat). A run that has
 # been silent longer than this lived in a server process that died (out of memory, redeploy), so it is failed.
 STALE_MINUTES = 5
+NO_HEARTBEAT_MINUTES = 60  # a run from a server version without the heartbeat: only fail it once it is clearly dead
 INTERRUPTED = ("Research stopped because the app server restarted while it was running "
                "(an update or the free server's memory limit). Click Research again.")
 
@@ -542,7 +543,8 @@ def fail_stale_runs(company_id: int | None = None) -> int:
     """Mark research runs that stopped sending heartbeats as failed, so the page stops showing "Researching"."""
     sql = f"""UPDATE run SET status='failed', error=?, finished_at=CURRENT_TIMESTAMP
               WHERE status IN ('queued','running')
-                AND COALESCE(updated_at, started_at) < datetime('now', '-{STALE_MINUTES} minutes')"""
+                AND ((updated_at IS NOT NULL AND updated_at < datetime('now', '-{STALE_MINUTES} minutes'))
+                   OR (updated_at IS NULL AND started_at < datetime('now', '-{NO_HEARTBEAT_MINUTES} minutes')))"""
     args: tuple = (INTERRUPTED,)
     if company_id is not None:
         sql += " AND company_id=?"

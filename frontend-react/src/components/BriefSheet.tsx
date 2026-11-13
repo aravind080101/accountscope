@@ -8,6 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { SheetContent } from "@/components/ui/dialog";
 import { Avatar, Tooltip } from "@/components/ui/misc";
 import { Select, Textarea } from "@/components/ui/input";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+
+/** Brief items come as plain text or as {text, source} depending on when the brief was built: always show text. */
+export const txt = (x: any): string => typeof x === "string" ? x : x == null ? "" : typeof x === "object" ? String(x.text ?? x.quote ?? x.topic ?? x.name ?? "") : String(x);
 
 const STYLE: Record<string, string> = { "data-driven": "Data-driven", visionary: "Visionary", pragmatic: "Pragmatic", technical: "Technical", "relationship-led": "Relationship-led", unknown: "Not enough to tell" };
 
@@ -30,7 +34,7 @@ export function BriefSheet({ person, onClose, onBuilt }: { person: any; onClose:
     <div><div className="mb-1 text-[12px] font-semibold text-muted">{title}</div>
       <ul className="space-y-1 text-[13px]">{items.map((x, i) => {
         const text = typeof x === "string" ? x : x.text; const sn = typeof x === "string" ? undefined : x.source; const s = sn != null ? src(sn) : null;
-        return (<li key={i} className="flex gap-1.5"><span className="text-faint">·</span><span>{text}{" "}
+        return (<li key={i} className="flex gap-1.5"><span className="text-faint">·</span><span>{txt(text)}{" "}
           {typeof x !== "string" && (s ? <a href={s.url} target="_blank" rel="noreferrer" className="whitespace-nowrap text-[11px] font-medium text-owner hover:underline">Their words ↗</a>
             : <span className="whitespace-nowrap text-[11px] text-faint">Role-typical</span>)}</span></li>);
       })}</ul></div>) : null;
@@ -48,22 +52,23 @@ export function BriefSheet({ person, onClose, onBuilt }: { person: any; onClose:
           {busy && !b && <div className="flex flex-col items-center gap-2 py-16 text-muted"><Loader2 className="size-5 animate-spin text-saffron" />Reading what they've said publicly…</div>}
           {err && <div className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] text-danger">{err}</div>}
           {b && (
+            <ErrorBoundary label="this brief" resetKey={pid}>
             <div className="space-y-5">
               <div className="flex items-center gap-2">
                 <Badge tone="violet"><Sparkles className="size-3" />{STYLE[b.communication_style] || b.communication_style}</Badge>
                 <Badge tone={b.confidence === "high" ? "green" : b.confidence === "low" ? "saffron" : "gray"}>{b.confidence} confidence</Badge>
                 <Button variant="ghost" size="xs" className="ml-auto" onClick={() => build(true)} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}Refresh</Button>
               </div>
-              <div><p className="text-[14px] font-medium leading-relaxed">{b.summary}</p>
-                {b.style_note && <p className="mt-1 text-[12.5px] text-muted">{b.style_note}</p>}
-                {b.note && <p className="mt-1 text-[12.5px] text-saffron-ink">{b.note}</p>}</div>
+              <div><p className="text-[14px] font-medium leading-relaxed">{txt(b.summary)}</p>
+                {b.style_note && <p className="mt-1 text-[12.5px] text-muted">{txt(b.style_note)}</p>}
+                {b.note && <p className="mt-1 text-[12.5px] text-saffron-ink">{txt(b.note)}</p>}</div>
               <VoiceCard v={b.voice} />
               <PersonalityCard p={b.personality} src={src} />
               <Samples pid={pid} onChange={() => build(true)} busy={busy} />
               {b.topics?.length > 0 && (
                 <div className="rounded-lg border border-line p-3"><div className="mb-2 text-[12px] font-semibold text-muted">What they've talked about</div>
                   <ul className="space-y-2">{b.topics.map((t: any, i: number) => { const s = src(t.source); return (
-                    <li key={i}><div className="text-[13px] font-medium">{t.topic}</div>{t.quote && <q className="text-[12.5px] text-muted">{t.quote}</q>}
+                    <li key={i}><div className="text-[13px] font-medium">{txt(t.topic)}</div>{t.quote && <q className="text-[12.5px] text-muted">{txt(t.quote)}</q>}
                       {s && <div className="text-[11.5px] text-faint">{t.date || s.published_at || ""} <a className="hover:text-fg hover:underline" href={s.url} target="_blank" rel="noreferrer">{s.title || s.url}</a></div>}</li>); })}</ul></div>
               )}
               {b.first_hand === 0 && <p className="rounded-md bg-saffron-soft px-3 py-2 text-[12.5px] text-saffron-ink">Nothing first-hand from this person was found, so the points below are typical for the role, not about them.</p>}
@@ -76,12 +81,13 @@ export function BriefSheet({ person, onClose, onBuilt }: { person: any; onClose:
               {b.evidence?.length > 0 && (
                 <div><div className="mb-1.5 text-[12px] font-semibold text-muted">In their words</div>
                   <ul className="space-y-2">{b.evidence.map((e: any, i: number) => { const s = src(e.source); return (
-                    <li key={i} className="border-l-2 border-saffron pl-3"><q className="text-[13px]">{e.quote}</q>
+                    <li key={i} className="border-l-2 border-saffron pl-3"><q className="text-[13px]">{txt(e.quote)}</q>
                       {s && <div className="text-[12px] text-faint">{s.published_at || ""} <a className="hover:text-fg hover:underline" href={s.url} target="_blank" rel="noreferrer">{s.title || s.url}</a></div>}</li>); })}</ul></div>
               )}
               <SourceList sources={b.sources || []} />
               <p className="border-t border-line pt-3 text-[12px] text-faint">Built from {b.sources?.length || 0} source{b.sources?.length === 1 ? "" : "s"} on {(b.created_at || "").slice(0, 10)}. Professional statements only.</p>
             </div>
+            </ErrorBoundary>
           )}
         </SheetContent>
       )}
@@ -103,7 +109,7 @@ export function PersonalityCard({ p, src }: { p: any; src: (n: number) => any })
     <div className="rounded-lg border border-line p-3">
       <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-muted"><Brain className="size-3.5" />Personality
         <span className="ml-auto font-normal text-faint">{p.known ? `${p.known} of ${traits.length} traits read from their own words` : "nothing first-hand to judge from"}</span></div>
-      {p.summary && <p className="mb-2.5 text-[13px] font-medium">{p.summary}</p>}
+      {p.summary && <p className="mb-2.5 text-[13px] font-medium">{txt(p.summary)}</p>}
       <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
         {traits.map((t) => {
           const known = t.lean !== "unknown";
@@ -125,17 +131,17 @@ export function PersonalityCard({ p, src }: { p: any; src: (n: number) => any })
       </div>
       {(p.values?.length > 0 || p.interests?.length > 0) && (
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {(p.values || []).map((x: any) => <Badge key={"v" + x.text} tone="violet">{x.text}</Badge>)}
-          {(p.interests || []).map((x: any) => <Badge key={"i" + x.text} tone="gray">{x.text}</Badge>)}
+          {(p.values || []).map((x: any, i: number) => <Badge key={"v" + i} tone="violet">{txt(x)}</Badge>)}
+          {(p.interests || []).map((x: any, i: number) => <Badge key={"i" + i} tone="gray">{txt(x)}</Badge>)}
         </div>)}
       {p.how_to_write?.length > 0 && (
         <div className="mt-3"><div className="mb-1 text-[11.5px] font-semibold text-muted">Write for this personality</div>
-          <ul className="space-y-0.5 text-[12.5px]">{p.how_to_write.map((x: string) => <li key={x} className="flex gap-1.5"><span className="text-faint">·</span>{x}</li>)}</ul></div>)}
+          <ul className="space-y-0.5 text-[12.5px]">{p.how_to_write.map((x: any, i: number) => <li key={i} className="flex gap-1.5"><span className="text-faint">·</span>{txt(x)}</li>)}</ul></div>)}
     </div>
   );
 }
 
-function VoiceCard({ v }: { v: any }) {
+export function VoiceCard({ v }: { v: any }) {
   if (!v) return null;
   const has = v.samples > 0;
   return (
@@ -143,13 +149,13 @@ function VoiceCard({ v }: { v: any }) {
       <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-muted"><MessageCircle className="size-3.5" />How they communicate
         <span className={has ? "ml-auto font-normal text-owner" : "ml-auto font-normal text-saffron-ink"}>{has ? `from ${v.samples} of their own texts` : "no first-hand writing yet"}</span></div>
       {has ? (<>
-        {v.summary && <p className="text-[13px] font-medium">{v.summary}</p>}
-        <div className="mt-2 flex flex-wrap gap-1.5">{Object.keys(VOICE_LABEL).filter((k) => v[k]).map((k) => <Badge key={k} tone="outline">{VOICE_LABEL[k]}: {v[k]}</Badge>)}</div>
-        {v.vocabulary?.length > 0 && <div className="mt-2 text-[12.5px]"><span className="text-muted">Words they use: </span>{v.vocabulary.map((w: string) => <q key={w} className="mr-2">{w}</q>)}</div>}
-        {v.how_they_reply && <div className="mt-1 text-[12.5px]"><span className="text-muted">How they reply: </span>{v.how_they_reply}</div>}
+        {v.summary && <p className="text-[13px] font-medium">{txt(v.summary)}</p>}
+        <div className="mt-2 flex flex-wrap gap-1.5">{Object.keys(VOICE_LABEL).filter((k) => txt(v[k])).map((k) => <Badge key={k} tone="outline">{VOICE_LABEL[k]}: {txt(v[k])}</Badge>)}</div>
+        {v.vocabulary?.length > 0 && <div className="mt-2 text-[12.5px]"><span className="text-muted">Words they use: </span>{v.vocabulary.map((w: any, i: number) => <q key={i} className="mr-2">{txt(w)}</q>)}</div>}
+        {v.how_they_reply && <div className="mt-1 text-[12.5px]"><span className="text-muted">How they reply: </span>{txt(v.how_they_reply)}</div>}
         <div className="mt-2 grid grid-cols-2 gap-3 text-[12.5px]">
-          {v.mirror?.length > 0 && <div><div className="text-[11.5px] font-semibold text-owner">Write to them like this</div><ul className="list-disc pl-4">{v.mirror.map((m: string) => <li key={m}>{m}</li>)}</ul></div>}
-          {v.avoid?.length > 0 && <div><div className="text-[11.5px] font-semibold text-danger">Tone to avoid</div><ul className="list-disc pl-4">{v.avoid.map((m: string) => <li key={m}>{m}</li>)}</ul></div>}
+          {v.mirror?.length > 0 && <div><div className="text-[11.5px] font-semibold text-owner">Write to them like this</div><ul className="list-disc pl-4">{v.mirror.map((m: any, i: number) => <li key={i}>{txt(m)}</li>)}</ul></div>}
+          {v.avoid?.length > 0 && <div><div className="text-[11.5px] font-semibold text-danger">Tone to avoid</div><ul className="list-disc pl-4">{v.avoid.map((m: any, i: number) => <li key={i}>{txt(m)}</li>)}</ul></div>}
         </div>
       </>) : <p className="text-[12.5px] text-muted">No talks, interviews or writing of theirs turned up in search. Paste a few things they wrote or said below for a real read on their voice; until then pitches use a plain, neutral tone.</p>}
     </div>
