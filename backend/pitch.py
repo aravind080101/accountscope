@@ -308,6 +308,11 @@ Proof points (use ONLY these; never invent clients or numbers):
 {proof or '- none'}"""
 
 
+def _txt(x) -> str:
+    """Brief items are plain text or {text, source}, depending on when the brief was built."""
+    return x if isinstance(x, str) else str((x or {}).get("text") or "") if isinstance(x, dict) else str(x)
+
+
 def _buyer_block(ctx: dict, brief: dict) -> str:
     p = ctx["person"]
     works = "\n".join(
@@ -323,8 +328,8 @@ def _buyer_block(ctx: dict, brief: dict) -> str:
     if v.get("samples"):
         voice = (f"from {v['samples']} of their own texts: {v.get('summary', '')} Register {v.get('register')}, length {v.get('length')}, "
                  f"{v.get('directness')}, makes points with {v.get('evidence')}, energy {v.get('energy')}, emoji/hashtags {v.get('emoji_hashtags')}. "
-                 f"Words they use: {', '.join(v.get('vocabulary') or [])}. How they reply: {v.get('how_they_reply') or 'unknown'}. "
-                 f"Write to them like this: {'; '.join(v.get('mirror') or [])}. Tone to avoid: {'; '.join(v.get('avoid') or [])}.")
+                 f"Words they use: {', '.join(_txt(x) for x in v.get('vocabulary') or [])}. How they reply: {v.get('how_they_reply') or 'unknown'}. "
+                 f"Write to them like this: {'; '.join(_txt(x) for x in v.get('mirror') or [])}. Tone to avoid: {'; '.join(_txt(x) for x in v.get('avoid') or [])}.")
     else:
         voice = "unknown (no first-hand writing found): keep it short, neutral and plain; no hype, no exclamation marks."
     pers = brief.get("personality") or {}

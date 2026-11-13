@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Brain, ClipboardPaste, Loader2, MessageCircle, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Brain, ClipboardPaste, Loader2, MessageCircle, RefreshCw, Sparkles, Trash2, Wand2 } from "lucide-react";
 import * as D from "@radix-ui/react-dialog";
 import { api, post } from "@/lib/api";
 import { confirmCost } from "@/components/CostConfirm";
@@ -58,6 +58,7 @@ export function BriefSheet({ person, onClose, onBuilt }: { person: any; onClose:
                 <Badge tone="violet"><Sparkles className="size-3" />{STYLE[b.communication_style] || b.communication_style}</Badge>
                 <Badge tone={b.confidence === "high" ? "green" : b.confidence === "low" ? "saffron" : "gray"}>{b.confidence} confidence</Badge>
                 <Button variant="ghost" size="xs" className="ml-auto" onClick={() => build(true)} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}Refresh</Button>
+                <Button size="xs" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("as:pitch", { detail: { ...person, person_id: pid } })); }}><Wand2 />Write pitch</Button>
               </div>
               <div><p className="text-[14px] font-medium leading-relaxed">{txt(b.summary)}</p>
                 {b.style_note && <p className="mt-1 text-[12.5px] text-muted">{txt(b.style_note)}</p>}

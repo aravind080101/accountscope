@@ -298,3 +298,21 @@ def test_run_without_heartbeat_gets_an_hour(connected):
     with db.session() as s:
         s.execute("INSERT INTO run(company_id, status, started_at) VALUES (?, 'running', datetime('now','-90 minutes'))", (cid,))
     assert db.fail_stale_runs(cid) == 1
+
+
+def test_pitch_reads_briefs_with_object_tips():
+    """Briefs built Nov 10 store voice tips as {text, source}; the pitch must still read them (Vijay Anandh)."""
+    from backend import pitch
+    ctx = {"person": {"full_name": "Vijay Anandh R", "title": "MD & CEO", "company": "City Union Bank"},
+           "works": [], "tech": [], "vendors": []}
+    brief = {"voice": {"samples": 1, "summary": "Execution story", "vocabulary": ["top class", {"text": "big hit"}],
+                       "mirror": [{"text": "Lead with the business objective.", "source": 1}],
+                       "avoid": [{"text": "No abstract AI pitch.", "source": 1}]}}
+    block = pitch._buyer_block(ctx, brief)
+    assert "Lead with the business objective." in block and "No abstract AI pitch." in block and "big hit" in block
+
+
+def test_org_chart_has_outreach_fields(connected):
+    cid = client.post("/api/accounts", json={"name": "Org Bank", "domain": "bank.test"}).json()["company_id"]
+    nodes = client.get(f"/api/accounts/{cid}/org").json()["nodes"]
+    assert all({"email", "has_brief", "linkedin_url"} <= set(n) for n in nodes)

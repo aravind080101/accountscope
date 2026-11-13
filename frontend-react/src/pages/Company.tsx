@@ -456,14 +456,15 @@ function PeopleTab({ id, onBrief }: any) {
   const roots = o.nodes.filter((n: any) => !hasParent.has(n.id)).sort((a: any, b: any) => a.rank - b.rank);
   const inits = [...new Map(o.nodes.flatMap((n: any) => n.initiatives).map((i: any) => [String(i.id), i])).values()] as any[];
 
+  const person = (n: any) => ({ person_id: n.id, full_name: n.name, title: n.title, linkedin_url: n.linkedin_url, email: n.email, has_brief: n.has_brief });
   const Node = ({ n, kind, depth }: any) => {
     const dim = hl && !n.initiatives.some((i: any) => String(i.id) === hl);
     return (
       <div>
         <div className="flex items-stretch" style={{ paddingLeft: depth * 28 }}>
           {depth > 0 && <span className={cn("mr-2 w-4 border-b-2 border-l-2 rounded-bl-md mb-[22px]", kind === "confirmed" ? "border-ink" : "border-dashed border-[#c5c7d6]")} />}
-          <button onClick={() => onBrief({ person_id: n.id, full_name: n.name, title: n.title })}
-            className={cn("my-1 flex min-w-[300px] items-center gap-2.5 rounded-lg border border-line bg-white px-3 py-2 text-left transition-opacity hover:border-[#d5d5dc]", dim && "opacity-30")}>
+          <div className={cn("group my-1 flex min-w-[300px] items-center rounded-lg border border-line bg-white transition-opacity hover:border-[#d5d5dc]", dim && "opacity-30")}>
+          <button onClick={() => onBrief(person(n))} className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-left">
             <Avatar name={n.name} size={30} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 font-medium">{n.name}{n.source === "evidence" && <Badge tone="green">In sources</Badge>}</div>
@@ -471,6 +472,14 @@ function PeopleTab({ id, onBrief }: any) {
               {n.initiatives.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{n.initiatives.map((i: any) => <Badge key={i.id} tone={ROLE_TONE[i.role]}>{i.role} · {i.name}</Badge>)}</div>}
             </div>
           </button>
+          <div className="flex shrink-0 items-center gap-0.5 pr-2">
+            {n.linkedin_url && <Tooltip content="Open LinkedIn"><Button asChild variant="ghost" size="icon-sm"><a href={n.linkedin_url} target="_blank" rel="noreferrer" aria-label="LinkedIn"><ExternalLink /></a></Button></Tooltip>}
+            <Tooltip content={n.has_brief ? "View buyer brief" : "Build a buyer brief"}>
+              <Button variant="ghost" size="icon-sm" aria-label="Buyer brief" onClick={() => onBrief(person(n))}><Sparkles className={cn(n.has_brief && "text-sponsor")} /></Button></Tooltip>
+            <Tooltip content="Write a pitch for outreach (Dripify sequence)">
+              <Button variant="ghost" size="icon-sm" aria-label="Write pitch" onClick={() => window.dispatchEvent(new CustomEvent("as:pitch", { detail: person(n) }))}><Wand2 className="text-saffron" /></Button></Tooltip>
+          </div>
+          </div>
         </div>
         {(kids[n.id] || []).sort((a, b) => byId[a.to].rank - byId[b.to].rank).map((e) => <Node key={e.to} n={byId[e.to]} kind={e.kind} depth={depth + 1} />)}
       </div>

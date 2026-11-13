@@ -86,7 +86,8 @@ def _match_manager(ref: str, people: list[dict], me: dict) -> dict | None:
 def build(company_id: int) -> dict:
     with db.session() as s:
         people = db.rows(s.execute(
-            "SELECT id, full_name, title, seniority, source, reports_to, reports_to_source, linkedin_url FROM person WHERE company_id=?",
+            """SELECT p.id, full_name, title, seniority, source, reports_to, reports_to_source, linkedin_url, email,
+                      EXISTS(SELECT 1 FROM buyer_brief b WHERE b.person_id=p.id) has_brief FROM person p WHERE company_id=?""",
             (company_id,)))
         links = db.rows(s.execute(
             """SELECT ic.person_id, ic.role, ic.feedback, i.id initiative_id, i.name initiative FROM initiative_contact ic
@@ -127,7 +128,8 @@ def build(company_id: int) -> dict:
             edges.append({"from": mgr["id"], "to": p["id"], "kind": kind})
 
     nodes = [{"id": p["id"], "name": p["full_name"], "title": p["title"], "function": p["function"], "rank": p["rank"],
-              "source": p["source"], "linkedin_url": p["linkedin_url"], "initiatives": p["initiatives"]} for p in people]
+              "source": p["source"], "linkedin_url": p["linkedin_url"], "email": p.get("email"),
+              "has_brief": bool(p.get("has_brief")), "initiatives": p["initiatives"]} for p in people]
     nodes.sort(key=lambda n: (n["rank"], n["function"], n["name"]))
     return {"nodes": nodes, "edges": edges,
             "confirmed": sum(e["kind"] == "confirmed" for e in edges), "inferred": sum(e["kind"] == "inferred" for e in edges)}
