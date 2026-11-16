@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
-import { Download, ExternalLink, Loader2, Mail, Send, Wand2 } from "lucide-react";
+import { Download, ExternalLink, Loader2, Mail, RefreshCw, Send, Wand2 } from "lucide-react";
+import { toast } from "sonner";
+import { post } from "@/lib/api";
+import { confirmCost } from "@/components/CostConfirm";
 import { useApi } from "@/lib/hooks";
 import { cn, day } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,6 +22,17 @@ export default function OutreachPage() {
   const exportable = (data || []).filter((p) => sel.has(p.id) && ["ready", "approved", "exported"].includes(p.status));
   const missingUrl = exportable.filter((p) => !p.linkedin_url).length;
   const toggle = (id: number) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const rerun = async (ids: number[]) => {
+    if (!ids.length) return;
+    const who = ids.length === 1 ? (data || []).find((p) => p.id === ids[0])?.full_name : `${ids.length} people`;
+    if (!(await confirmCost(`/api/pitches/rerun/cost?ids=${ids.join(",")}`, `Re-run the outreach for ${who}?`, "Re-run"))) return;
+    try {
+      const r = await post("/api/pitches/rerun", { ids });
+      toast.success(`Re-writing ${r.queued} pitch${r.queued === 1 ? "" : "es"} with the current rules`);
+      setSel(new Set()); reload();
+    } catch (e: any) { toast.error(e.message); }
+  };
+  const rerunnable = (data || []).filter((p) => sel.has(p.id) && p.status !== "queued" && p.status !== "running").map((p) => p.id);
   const download = () => { location.href = `/api/pitches.csv?ids=${exportable.map((p) => p.id).join(",")}`; setTimeout(reload, 1200); };
 
   return (
@@ -28,12 +42,13 @@ export default function OutreachPage() {
         <span className="text-[13px] text-faint">{data?.length ?? 0} pitches</span>
         <div className="ml-auto flex items-center gap-2">
           {exportable.length > 0 && missingUrl > 0 && <span className="text-[12px] text-saffron-ink">{missingUrl} without a LinkedIn URL</span>}
+          <Button size="sm" variant="outline" onClick={() => rerun(rerunnable)} disabled={!rerunnable.length}><RefreshCw />Re-run {rerunnable.length || ""}</Button>
           <Button size="sm" onClick={download} disabled={!exportable.length}><Download />Export {exportable.length || ""} as CSV</Button>
         </div>
       </header>
       <div className="flex items-center gap-1.5 border-b border-line px-6 py-2.5">
         {FILTERS.map(([k, l]) => <button key={k} onClick={() => setF(k)} title={k === "weak" ? "Scored under 7.5/10 against the simulated buyer" : undefined} className={cn("h-7 shrink-0 whitespace-nowrap rounded-full border px-3 text-[12.5px]", f === k ? "border-ink bg-ink text-white" : "border-line bg-white text-muted hover:text-fg")}>{l}</button>)}
-        <p className="ml-auto max-w-[520px] text-right text-[12px] text-faint">The CSV has a Connection note and a Message 1 column per lead. In Dripify, map them to Custom Lead Fields and use them as variables.</p>
+        <p className="ml-auto max-w-[520px] text-right text-[12px] text-faint">Select pitches and click Re-run to rewrite them with the latest rules. The CSV has all 9 messages per lead. In Dripify, map them to Custom Lead Fields and use them as variables.</p>
       </div>
       <div className="flex-1">
         {!data ? <div className="p-10 text-center"><Loader2 className="mx-auto size-5 animate-spin text-muted" /></div>
@@ -42,7 +57,7 @@ export default function OutreachPage() {
             <Table>
               <thead><tr>
                 <Th className="w-10 pl-6"><Checkbox checked={rows.length > 0 && rows.every((r) => sel.has(r.id))} onCheckedChange={(v) => setSel(v ? new Set(rows.map((r) => r.id)) : new Set())} /></Th>
-                <Th>Person</Th><Th>Hook</Th><Th>Offer</Th><Th>Score</Th><Th>Status</Th><Th className="pr-6">Updated</Th>
+                <Th>Person</Th><Th>Hook</Th><Th>Offer</Th><Th>Score</Th><Th>Status</Th><Th>Updated</Th><Th className="w-12 pr-6" />
               </tr></thead>
               <tbody>{rows.map((p) => {
                 const busy = p.status === "queued" || p.status === "running";
@@ -61,7 +76,11 @@ export default function OutreachPage() {
                     <Td><Tooltip content={`${p.rounds} round(s) with the simulated buyer`}><span><ScorePill v={p.score} /></span></Tooltip></Td>
                     <Td><div className="flex items-center gap-1.5"><Badge tone={p.status === "approved" ? "green" : p.status === "exported" ? "violet" : p.status === "failed" ? "red" : "gray"}>{p.status}</Badge>
                       {!p.linkedin_url && !busy && <Tooltip content="No LinkedIn URL: Dripify needs it. Use Get email on the contact."><span><Badge tone="saffron">no URL</Badge></span></Tooltip>}</div></Td>
-                    <Td className="pr-6 text-muted tabular-nums">{day(p.updated_at)}</Td>
+                    <Td className="text-muted tabular-nums">{day(p.updated_at)}</Td>
+                    <Td className="pr-6" onClick={(e) => e.stopPropagation()}>
+                      <Tooltip content="Re-run the outreach messages"><span>
+                        <Button size="xs" variant="ghost" aria-label={`Re-run outreach for ${p.full_name}`} disabled={busy} onClick={() => rerun([p.id])}><RefreshCw /></Button>
+                      </span></Tooltip></Td>
                   </Tr>
                 );
               })}</tbody>

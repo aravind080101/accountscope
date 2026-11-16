@@ -877,6 +877,31 @@ def top_contacts(company_id: int, limit: int = 5, min_fit: float = 0.5) -> list[
     return [r["person_id"] for r in rows]
 
 
+def rerun(pitch_ids: list[int]) -> list[int]:
+    """Write fresh pitches for the same people and context (e.g. after the rules changed). Returns new pitch ids."""
+    with db.session() as s:
+        rows = [dict(r) for r in s.execute(
+            f"SELECT id, person_id, context_kind, context_id FROM pitch WHERE id IN ({','.join('?' * len(pitch_ids))})",
+            tuple(pitch_ids))] if pitch_ids else []
+    seen, new_ids = set(), []
+    for r in rows:
+        if r["person_id"] in seen:
+            continue
+        seen.add(r["person_id"])
+        with db.session() as s:   # the old pitch goes, whatever its status, so the list shows one per person
+            s.execute("DELETE FROM pitch WHERE id=?", (r["id"],))
+        new_ids.append(create(r["person_id"], r["context_kind"], r["context_id"]))
+    return new_ids
+
+
+def person_ids(pitch_ids: list[int]) -> list[int]:
+    if not pitch_ids:
+        return []
+    with db.session() as s:
+        return list({r["person_id"] for r in s.execute(
+            f"SELECT person_id FROM pitch WHERE id IN ({','.join('?' * len(pitch_ids))})", tuple(pitch_ids))})
+
+
 def run_queue(pitch_ids: list[int]) -> None:
     for pid in pitch_ids:
         run(pid)

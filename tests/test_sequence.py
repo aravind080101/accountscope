@@ -57,3 +57,26 @@ def test_offering_rank_weights(monkeypatch):
     assert [r["offering"] for r in ranked] == ["Migration testing", "Game testing"]
     assert ranked[0]["score"] == 90 and ranked[0]["label"] == "lead"
     assert ranked[1]["label"] == "don't pitch"
+
+
+def test_rerun_replaces_the_pitch_for_the_same_person(monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend import app as appmod, db
+    with db.session() as s:
+        cid = s.execute("INSERT INTO company(name) VALUES ('Rerun Co')").lastrowid
+        pid = s.execute("INSERT INTO person(company_id, full_name, title) VALUES (?, 'Asha Rao', 'CTO')", (cid,)).lastrowid
+    old = pitch.create(pid)
+    with db.session() as s:
+        s.execute("UPDATE pitch SET status='approved' WHERE id=?", (old,))
+    ran = []
+    monkeypatch.setattr(pitch, "run_queue", lambda ids: ran.extend(ids))
+    monkeypatch.setattr(appmod.llm, "available", lambda: True)
+    c = TestClient(appmod.app, headers={"X-Requested-With": "accountscope"})
+    r = c.post("/api/pitches/rerun", json={"ids": [old]})
+    assert r.status_code == 200, r.text
+    new_ids = r.json()["pitch_ids"]
+    assert len(new_ids) == 1 and ran == new_ids
+    with db.session() as s:
+        assert s.execute("SELECT COUNT(*) n FROM pitch WHERE person_id=?", (pid,)).fetchone()["n"] == 1   # old one replaced, even if approved
+        assert s.execute("SELECT person_id, status FROM pitch WHERE id=?", (new_ids[0],)).fetchone()["status"] == "queued"
+    assert c.get(f"/api/pitches/rerun/cost?ids={new_ids[0]}").status_code == 200

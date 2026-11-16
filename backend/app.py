@@ -807,6 +807,29 @@ def pitch_account_cost(cid: int, limit: int = 5, min_fit: float = 0.5):
     return costs.pitches(pitch.top_contacts(cid, max(1, min(limit, 25)), min_fit))
 
 
+class RerunIn(BaseModel):
+    ids: list[int]
+
+
+@app.get("/api/pitches/rerun/cost")
+def rerun_cost(ids: str):
+    id_list = guard.owned_ids("pitch", [int(x) for x in ids.split(",") if x.strip().isdigit()])
+    return costs.pitches(pitch.person_ids(id_list))
+
+
+@app.post("/api/pitches/rerun")
+def rerun_pitches(body: RerunIn, background: BackgroundTasks):
+    """Re-write the outreach for these pitches with the current rules, profile and points of view."""
+    if not llm.available():
+        raise HTTPException(400, "Pitches need OPENAI_API_KEY or ANTHROPIC_API_KEY")
+    id_list = guard.owned_ids("pitch", body.ids[:50])
+    if not id_list:
+        raise HTTPException(400, "Pick at least one pitch")
+    new_ids = pitch.rerun(id_list)
+    background.add_task(pitch.run_queue, new_ids)
+    return {"queued": len(new_ids), "pitch_ids": new_ids}
+
+
 @app.get("/api/pitches.csv")
 def pitches_csv(ids: str):
     id_list = guard.owned_ids("pitch", [int(x) for x in ids.split(",") if x.strip().isdigit()])
