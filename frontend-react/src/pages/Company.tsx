@@ -446,8 +446,15 @@ function ClientProjectCard({ p, company, open, toggle, act, onBrief }: any) {
 /* ------------------------------------------------------------ People (org chart) */
 
 function PeopleTab({ id, onBrief }: any) {
-  const { data: o } = useApi<any>(`/api/accounts/${id}/org`);
+  const { data: o, reload } = useApi<any>(`/api/accounts/${id}/org`);
   const [hl, setHl] = useState("");
+  const [enriching, setEnriching] = useState<number | null>(null);
+  const enrich = async (n: any) => {
+    if (!(await confirmCost(`/api/people/${n.id}/cost?action=enrich`, `Get ${n.name}'s email?`, "Get email"))) return;
+    setEnriching(n.id);
+    try { await post(`/api/people/${n.id}/enrich`); toast.success("Contact revealed"); reload(); }
+    catch (e: any) { toast.error(e.message); } finally { setEnriching(null); }
+  };
   if (!o) return <div className="p-6"><Skeleton className="h-40 w-full" /></div>;
   if (!o.nodes.length) return <div className="p-6"><Empty icon={<Users />} title="No people found yet">The org chart fills in from people named in sources and, with Apollo and the company's website, from its leadership team.</Empty></div>;
   const byId = Object.fromEntries(o.nodes.map((n: any) => [n.id, n]));
@@ -474,6 +481,9 @@ function PeopleTab({ id, onBrief }: any) {
           </button>
           <div className="flex shrink-0 items-center gap-0.5 pr-2">
             {n.linkedin_url && <Tooltip content="Open LinkedIn"><Button asChild variant="ghost" size="icon-sm"><a href={n.linkedin_url} target="_blank" rel="noreferrer" aria-label="LinkedIn"><ExternalLink /></a></Button></Tooltip>}
+            {n.email ? <Tooltip content={n.email}><Button asChild variant="ghost" size="icon-sm"><a href={`mailto:${n.email}`} aria-label="Email"><Mail className="text-sponsor" /></a></Button></Tooltip>
+              : <Tooltip content="Get email and LinkedIn (1 Apollo credit)"><Button variant="ghost" size="icon-sm" aria-label="Get email" disabled={enriching === n.id} onClick={() => enrich(n)}>
+                {enriching === n.id ? <Loader2 className="animate-spin" /> : <Mail />}</Button></Tooltip>}
             <Tooltip content={n.has_brief ? "View buyer brief" : "Build a buyer brief"}>
               <Button variant="ghost" size="icon-sm" aria-label="Buyer brief" onClick={() => onBrief(person(n))}><Sparkles className={cn(n.has_brief && "text-sponsor")} /></Button></Tooltip>
             <Tooltip content="Write a pitch for outreach (Dripify sequence)">

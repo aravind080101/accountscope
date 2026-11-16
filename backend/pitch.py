@@ -84,6 +84,7 @@ def latest_for_person(person_id: int) -> dict | None:
 
 def list_all(company_id: int | None = None, workspace_id: int | None = None) -> list[dict]:
     q = """SELECT pt.id, pt.person_id, pt.status, pt.score, pt.updated_at, pt.data, p.full_name, p.title, p.linkedin_url, p.email,
+           EXISTS(SELECT 1 FROM buyer_brief b WHERE b.person_id=p.id) has_brief,
            c.name company, c.id company_id FROM pitch pt JOIN person p ON p.id=pt.person_id JOIN company c ON c.id=p.company_id
            WHERE c.workspace_id=?"""
     args: tuple = (workspace_id or tenancy.current(),)

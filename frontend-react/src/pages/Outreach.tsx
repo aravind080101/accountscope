@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Download, ExternalLink, Loader2, Mail, RefreshCw, Send, Wand2 } from "lucide-react";
+import { Download, ExternalLink, Loader2, Mail, RefreshCw, Send, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { post } from "@/lib/api";
 import { confirmCost } from "@/components/CostConfirm";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, Checkbox, Empty, Tooltip } from "@/components/ui/misc";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { PitchSheet, ScorePill } from "@/components/PitchSheet";
+import { BriefSheet } from "@/components/BriefSheet";
 
 const FILTERS = [["all", "All"], ["ready", "Ready"], ["approved", "Approved"], ["exported", "Exported"], ["weak", "Needs work"]] as const;
 
@@ -18,6 +19,14 @@ export default function OutreachPage() {
   const [f, setF] = useState<string>("all");
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [open, setOpen] = useState<any>(null);
+  const [brief, setBrief] = useState<any>(null);
+  const [enriching, setEnriching] = useState<number | null>(null);
+  const enrich = async (p: any) => {
+    if (!(await confirmCost(`/api/people/${p.person_id}/cost?action=enrich`, `Get ${p.full_name}'s email?`, "Get email"))) return;
+    setEnriching(p.person_id);
+    try { await post(`/api/people/${p.person_id}/enrich`); toast.success("Contact revealed"); reload(); }
+    catch (e: any) { toast.error(e.message); } finally { setEnriching(null); }
+  };
   const rows = useMemo(() => (data || []).filter((p) => f === "all" || (f === "weak" ? (p.score ?? 0) < 7.5 && p.status !== "failed" : p.status === f)), [data, f]);
   const exportable = (data || []).filter((p) => sel.has(p.id) && ["ready", "approved", "exported"].includes(p.status));
   const missingUrl = exportable.filter((p) => !p.linkedin_url).length;
@@ -57,7 +66,7 @@ export default function OutreachPage() {
             <Table>
               <thead><tr>
                 <Th className="w-10 pl-6"><Checkbox checked={rows.length > 0 && rows.every((r) => sel.has(r.id))} onCheckedChange={(v) => setSel(v ? new Set(rows.map((r) => r.id)) : new Set())} /></Th>
-                <Th>Person</Th><Th>Hook</Th><Th>Offer</Th><Th>Score</Th><Th>Status</Th><Th>Updated</Th><Th className="w-12 pr-6" />
+                <Th>Person</Th><Th>Hook</Th><Th>Offer</Th><Th>Score</Th><Th>Status</Th><Th>Updated</Th><Th className="w-28 pr-6" />
               </tr></thead>
               <tbody>{rows.map((p) => {
                 const busy = p.status === "queued" || p.status === "running";
@@ -78,9 +87,16 @@ export default function OutreachPage() {
                       {!p.linkedin_url && !busy && <Tooltip content="No LinkedIn URL: Dripify needs it. Use Get email on the contact."><span><Badge tone="saffron">no URL</Badge></span></Tooltip>}</div></Td>
                     <Td className="text-muted tabular-nums">{day(p.updated_at)}</Td>
                     <Td className="pr-6" onClick={(e) => e.stopPropagation()}>
-                      <Tooltip content="Re-run the outreach messages"><span>
-                        <Button size="xs" variant="ghost" aria-label={`Re-run outreach for ${p.full_name}`} disabled={busy} onClick={() => rerun([p.id])}><RefreshCw /></Button>
-                      </span></Tooltip></Td>
+                      <div className="flex items-center justify-end gap-0.5">
+                        {!p.email && <Tooltip content="Get email and LinkedIn (1 Apollo credit)"><span>
+                          <Button variant="ghost" size="icon-sm" aria-label={`Get email for ${p.full_name}`} disabled={enriching === p.person_id} onClick={() => enrich(p)}>
+                            {enriching === p.person_id ? <Loader2 className="animate-spin" /> : <Mail />}</Button></span></Tooltip>}
+                        <Tooltip content={p.has_brief ? "View buyer brief" : "Build a buyer brief"}><span>
+                          <Button variant="ghost" size="icon-sm" aria-label={`Buyer brief for ${p.full_name}`} onClick={() => setBrief({ person_id: p.person_id, full_name: p.full_name, title: p.title, company: p.company, has_brief: p.has_brief })}>
+                            <Sparkles className={cn(p.has_brief && "text-sponsor")} /></Button></span></Tooltip>
+                        <Tooltip content="Re-run the outreach messages"><span>
+                          <Button variant="ghost" size="icon-sm" aria-label={`Re-run outreach for ${p.full_name}`} disabled={busy} onClick={() => rerun([p.id])}><RefreshCw /></Button></span></Tooltip>
+                      </div></Td>
                   </Tr>
                 );
               })}</tbody>
@@ -88,6 +104,7 @@ export default function OutreachPage() {
           )}
       </div>
       <PitchSheet person={open} onClose={() => setOpen(null)} onChanged={reload} />
+      <BriefSheet person={brief} onClose={() => setBrief(null)} onBuilt={reload} />
     </div>
   );
 }
