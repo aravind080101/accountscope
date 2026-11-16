@@ -115,3 +115,20 @@ def test_interests_can_come_from_any_cited_page_but_traits_need_their_words():
     p = buyers._clean_personality(raw, sources)
     assert [x["text"] for x in p["interests"]] == ["Runs the Chennai marathon"]
     assert p["values"] == []
+
+
+def test_deck_passages_only_when_they_match_the_need():
+    from backend import profiles, db
+    with db.session() as s:
+        s.execute("DELETE FROM seller_doc")
+        s.execute("INSERT INTO seller_doc(workspace_id, name, kind, text) VALUES (1, 'Banking deck', 'deck', ?)",
+                  ("Core banking migration testing: we reconcile standing instructions, beneficiaries and transaction limits "
+                   "per customer before cutover, and inject timeouts after each migration step. " * 3,))
+        s.execute("INSERT INTO seller_doc(workspace_id, name, kind, text) VALUES (1, 'OTT deck', 'deck', ?)",
+                  ("Streaming apps: we test playback across smart TVs, DRM licences and adaptive bitrate on low bandwidth. " * 3,))
+        s.execute("INSERT INTO seller_doc(workspace_id, name, kind, text) VALUES (1, 'CEO post', 'pov', ?)",
+                  ("Core banking migration standing instructions beneficiaries cutover. " * 5,))
+    got = profiles.relevant_material("New net banking platform, core banking migration, cutover of standing instructions and beneficiaries")
+    assert got and got[0]["doc"] == "Banking deck" and all(m["doc"] != "CEO post" for m in got)   # POV material isn't offerings
+    assert all(m["doc"] != "OTT deck" for m in got)
+    assert profiles.relevant_material("hospital patient scheduling for clinics") == []           # nothing fits: nothing used

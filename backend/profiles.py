@@ -453,3 +453,54 @@ For EACH offering return {{"rank": [{{"offering": exact offering name, "initiati
     ranked.sort(key=lambda x: x["score"], reverse=True)
     cache.put(key, ranked)
     return ranked
+
+
+# ------------------------------------------------- deck passages that match a prospect's current work
+
+_STOP = set("""a an and are as at be by for from has have in into is it its of on or our that the their them they this to
+was we were what when which who will with you your more most over than then there these those can not but also such
+been being do does each other any all new use used using via per""".split())
+
+
+def _words(text: str) -> list[str]:
+    import re as _re
+    return [w for w in _re.findall(r"[a-z][a-z0-9+.-]{2,}", (text or "").lower()) if w not in _STOP]
+
+
+def relevant_material(query: str, k: int = 4, min_hits: int = 3) -> list[dict]:
+    """Passages from your decks and web pages (not leadership POV) that match the query, best first.
+    Free and local: chunks scored by shared rare words. A passage needs min_hits distinct matching words to count,
+    so nothing is returned when the decks don't speak to this person's needs."""
+    import math
+    with db.session() as s:
+        docs = [dict(r) for r in s.execute("SELECT name, kind, text FROM seller_doc WHERE workspace_id=? AND kind!='pov'",
+                                           (tenancy.current(),))]
+    chunks = []
+    for d in docs:
+        text = " ".join((d["text"] or "").split())
+        for i in range(0, len(text), 900):
+            piece = text[max(0, i - 100): i + 900]
+            if len(piece) > 120:
+                chunks.append({"doc": d["name"], "kind": d["kind"], "text": piece, "words": set(_words(piece))})
+    if not chunks:
+        return []
+    q = set(_words(query))
+    df = {w: sum(1 for c in chunks if w in c["words"]) for w in q}
+    n = len(chunks)
+    scored = []
+    for c in chunks:
+        hits = q & c["words"]
+        if len(hits) < min_hits:
+            continue
+        score = sum(math.log(1 + n / (1 + df[w])) for w in hits)
+        scored.append((score, c, hits))
+    scored.sort(key=lambda x: -x[0])
+    out, seen_docs = [], {}
+    for score, c, hits in scored:
+        if seen_docs.get(c["doc"], 0) >= 2:  # spread across documents
+            continue
+        seen_docs[c["doc"]] = seen_docs.get(c["doc"], 0) + 1
+        out.append({"doc": c["doc"], "kind": c["kind"], "text": c["text"], "matched": sorted(hits)[:8], "score": round(score, 1)})
+        if len(out) >= k:
+            break
+    return out

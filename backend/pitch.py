@@ -123,15 +123,17 @@ SEQUENCE = [  # key, label, when to send, character limit, rule for the writer
     ("advice", "4 · Ask for advice", "After they reply to 3", 500,
      "Ask for their expert view, rooted in their career or what they've said. They teach, you learn. No seller name."),
     ("give", "5 · Give", "After they reply to 4", 500,
-     "One useful, specific insight from the seller's experience phrased as 'I keep seeing...' (use a proof point's "
-     "learning, never a client name or number). Expertise visible, seller NOT named. May end with 'useful?'."),
+     "One useful, specific insight from the seller's experience phrased as 'I keep seeing...'. Prefer a learning from "
+     "FROM YOUR DECKS that fits their need, else a proof point's learning; never a client name or number. Expertise "
+     "visible, seller NOT named. May end with 'useful?'."),
     ("reveal", "6 · Natural reveal", "When they ask what you do, or after 5 lands", 400,
      "One plain line on what the sender does, naming the seller once and the fitting offering in everyday words, "
      "then hand the conversation back with a question about their situation."),
     ("interest_check", "7 · Interest check", "After 6", 400,
      "Ask for interest, not time: e.g. 'Worth comparing notes on how you're approaching X?'. No call, no minutes."),
     ("contact", "8 · Contact", "After a yes or maybe", 400,
-     "Offer the give-first offer as something that reads better as a PDF or doc, and ask for the best email. Email only."),
+     "Offer something useful that reads better as a PDF: the give-first offer, or the deck/case study from FROM YOUR "
+     "DECKS that matches their need (by topic, not file name). Ask for the best email. Email only."),
     ("specific_ask", "9 · Specific ask", "After an email exchange", 400,
      "One specific day and time for 15 minutes, tied to the pain they named. No deck."),
 ]
@@ -339,7 +341,21 @@ Offerings:
 Give-first offers (use ONLY these, by exact name):
 {offers or '- none listed: suggest a short, low-effort conversation only'}
 Proof points (use ONLY these; never invent clients or numbers):
-{proof or '- none'}{_pov_block(profile)}"""
+{proof or '- none'}{_material_block(profile)}{_pov_block(profile)}"""
+
+
+def _material_block(profile: dict) -> str:
+    """Passages from the seller's own decks and documents that match this person's current work."""
+    mat = profile.get("_material") or []
+    if not mat:
+        return ""
+    body = "\n".join(f"[{m['doc']}] {m['text'][:700]}" for m in mat)
+    return f"""
+FROM YOUR DECKS AND DOCUMENTS (passages that match this person's current work). Use them ONLY where they genuinely
+fit what this person needs now; ignore any that don't. Before stage 6 use them as learnings or observations, never
+naming the seller, a client or a number. From stage 6, the matching deck or case study can be offered by its topic
+(e.g. "a short case study on a core banking cutover"). Never invent anything the passages don't say.
+{body}"""
 
 
 def _pov_block(profile: dict) -> str:
@@ -433,6 +449,7 @@ Return {{"angles": [{{
                           about their situation they'd enjoy answering, or something useful we could send (no meetings),
   "offering": the seller offering that fits, "offer": exact give-first offer name to bring up only AFTER they reply,
   "proof": one proof point from the list that fits, or null,
+  "deck_support": {{"doc": document name from FROM YOUR DECKS, "point": what in it fits THIS person's need}} or null if none fits,
   "why_they_care": one sentence tied to their priorities or concerns,
   "strength": 1-10 }}],
 "chosen": index of the strongest angle, "skip_reason": null, or a reason this person is a poor target right now,
@@ -768,6 +785,16 @@ def _run(pitch_id: int) -> None:
             ranked = []
         if ranked:
             _log(pitch_id, f"Best offering for {ctx['person']['company']}: {ranked[0]['offering']} ({ranked[0]['score']}/100, {ranked[0]['label']})")
+        query = " ".join([w["name"] + " " + (w.get("summary") or "") + " " + " ".join(w.get("tech") or []) for w in ctx["works"]]
+                         + [t.get("what", "") for t in trig.get("triggers", [])]
+                         + [_txt(x) for k in ("priorities", "concerns") for x in (brief.get(k) or [])]
+                         + ctx["tech"][:10] + [ctx["person"].get("industry") or ""])
+        material = profiles.relevant_material(query)
+        if material:
+            profile = {**profile, "_material": material}
+            _log(pitch_id, f"Found {len(material)} matching passage(s) in your decks: {', '.join(sorted({m['doc'] for m in material}))}")
+        else:
+            _log(pitch_id, "Nothing in your decks matches this person's current work closely; using the profile only")
         _log(pitch_id, "Strategist: finding angles where their world meets what you sell")
         strat = strategize(ctx, brief, profile, trig, ranked)
         angles = strat["angles"]
@@ -845,6 +872,7 @@ def _run(pitch_id: int) -> None:
         data = {"angle": angles[best["angle"]], "angles": angles, "triggers": trig["triggers"],
                 "dismiss_reasons": trig["dismiss_reasons"], "hooks": hook_sets.get(best["angle"], []), "why": why, "messages": messages, "simulation": best["simulation"],
                 "warmup": seq["warmup"], "approach": approach, "sequence_issues": seq_issues, "offering_rank": ranked[:5],
+                "deck_material": [{k: m[k] for k in ("doc", "kind", "matched")} | {"text": m["text"][:400]} for m in material],
                 "openers": brief.get("openers") or [],
                 "rounds": rounds, "objections": objs, "warnings": warnings, "skip_reason": strat.get("skip_reason"),
                 "research": {"first_hand": brief.get("first_hand", 0), "topics": brief.get("topics") or [], "voice": brief.get("voice") or {},

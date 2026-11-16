@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as D from "@radix-ui/react-dialog";
 import { toast } from "sonner";
-import { Check, ChevronDown, Copy, Crosshair, Flame, Lightbulb, Loader2, MessageSquareQuote, RefreshCw, ShieldAlert, Swords, Target, Wand2 } from "lucide-react";
+import { Check, ChevronDown, Copy, Crosshair, FileText, Flame, Lightbulb, Loader2, MessageSquareQuote, RefreshCw, ShieldAlert, Swords, Target, Wand2 } from "lucide-react";
 import { api, post } from "@/lib/api";
 import { confirmCost } from "@/components/CostConfirm";
 import { cn } from "@/lib/utils";
@@ -132,6 +132,21 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
                   {d.angle?.proof && <div className="sm:col-span-2"><dt className="text-[11.5px] font-semibold text-muted">Proof used</dt><dd>{d.angle.proof}</dd></div>}
                 </dl>
               </section>
+
+              {/* what the messages took from your decks */}
+              {(d.angle?.deck_support || d.deck_material?.length > 0) && (
+                <section className="rounded-lg border border-line p-4">
+                  <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted"><FileText className="size-3.5" />From your decks</div>
+                  {d.angle?.deck_support?.doc
+                    ? <p className="mb-2 text-[13px]"><Badge tone="green">Used</Badge> <b className="font-medium">{d.angle.deck_support.doc}</b>: {d.angle.deck_support.point}</p>
+                    : <p className="mb-2 text-[12.5px] text-muted">Matching passages were found, but none fit this person's current need closely enough to use.</p>}
+                  <details className="text-[12.5px]"><summary className="cursor-pointer text-muted">{d.deck_material?.length || 0} matching passage{d.deck_material?.length === 1 ? "" : "s"}</summary>
+                    <ul className="mt-2 space-y-2">{(d.deck_material || []).map((m: any, i: number) => (
+                      <li key={i} className="rounded-md border border-line-2 p-2"><div className="flex items-center gap-1.5"><b className="font-medium">{m.doc}</b>
+                        <span className="text-[11px] text-faint">matched: {(m.matched || []).join(", ")}</span></div>
+                        <p className="mt-0.5 line-clamp-3 text-muted">{m.text}</p></li>))}</ul></details>
+                </section>
+              )}
 
               {/* what hits them + hooks tested */}
               {(d.triggers?.length > 0 || d.hooks?.length > 0) && (
