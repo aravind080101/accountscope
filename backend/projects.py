@@ -11,6 +11,7 @@ import json
 import re
 
 from . import db, feedback, llm, profiles
+from . import people as people_mod
 from .providers import apollo
 
 STATUSES = ["announced", "won", "in_progress", "live", "completed"]
@@ -248,7 +249,7 @@ def _save_contacts(company_id: int, pid: int, people: list) -> None:
         for person, role, score, why in people:
             same = person.get("apollo_id") and s.execute(
                 "SELECT full_name FROM person WHERE company_id=? AND apollo_id=?", (company_id, person["apollo_id"])).fetchone()
-            name = same["full_name"] if same else person["full_name"]
+            name = same["full_name"] if same else people_mod.canonical_name(s, company_id, person["full_name"])
             s.execute(
                 """INSERT INTO person(company_id, full_name, title, seniority, linkedin_url, apollo_id, source) VALUES (?,?,?,?,?,?,?)
                    ON CONFLICT(company_id, full_name) DO UPDATE SET title=COALESCE(excluded.title, title),

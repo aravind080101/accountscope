@@ -80,3 +80,27 @@ def test_rerun_replaces_the_pitch_for_the_same_person(monkeypatch):
         assert s.execute("SELECT COUNT(*) n FROM pitch WHERE person_id=?", (pid,)).fetchone()["n"] == 1   # old one replaced, even if approved
         assert s.execute("SELECT person_id, status FROM pitch WHERE id=?", (new_ids[0],)).fetchone()["status"] == "queued"
     assert c.get(f"/api/pitches/rerun/cost?ids={new_ids[0]}").status_code == 200
+
+
+def test_same_person_written_differently_is_one_record():
+    from backend import people, db
+    assert people.name_key("Dr N Kamakodi") == people.name_key("Dr. N. Kamakodi") == people.name_key("N Kamakodi")
+    assert people.name_key("R. Vijay Anandh") == people.name_key("Vijay Anandh R") == people.name_key("Vijay Anandh")
+    assert people.name_key("A Kumar") != people.name_key("B Kumar")
+    assert people.name_key("Ravi I***") is None
+    with db.session() as s:
+        cid = s.execute("INSERT INTO company(name) VALUES ('Dupe Bank')").lastrowid
+        a = s.execute("INSERT INTO person(company_id, full_name, title) VALUES (?, 'R. Vijay Anandh', 'MD & CEO')", (cid,)).lastrowid
+        b = s.execute("INSERT INTO person(company_id, full_name, title, email) VALUES (?, 'Vijay Anandh R', 'Managing Director', 'v@x.test')",
+                      (cid,)).lastrowid
+        c = s.execute("INSERT INTO person(company_id, full_name, title) VALUES (?, 'Dr N Kamakodi', 'MD & CEO')", (cid,)).lastrowid
+        s.execute("INSERT INTO person(company_id, full_name, title) VALUES (?, 'Dr. N. Kamakodi', 'MD & CEO (upto April 30, 2026)')", (cid,))
+        s.execute("INSERT INTO buyer_brief(person_id, brief, sources) VALUES (?, '{}', '[]')", (a,))
+        assert people.canonical_name(s, cid, "Dr. N Kamakodi") == "Dr N Kamakodi"
+    assert people.merge_duplicates(cid) == 2
+    with db.session() as s:
+        rows = {r["full_name"]: dict(r) for r in s.execute("SELECT * FROM person WHERE company_id=?", (cid,))}
+        assert len(rows) == 2
+        vijay = rows["Vijay Anandh R"]                       # the one with an email is kept
+        assert vijay["id"] == b and s.execute("SELECT 1 FROM buyer_brief WHERE person_id=?", (b,)).fetchone()   # brief moved over
+        assert "upto" in next(r["title"] for n, r in rows.items() if "Kamakodi" in n)               # former role stays visible

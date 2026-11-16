@@ -310,7 +310,9 @@ function ContactRow({ p, act, onBrief, base = "/api/contacts" }: any) {
           <Tooltip content="Write a pitch: hook, offer, Dripify sequence, tested against a simulated buyer">
             <Button variant="ghost" size="icon-sm" aria-label="Write pitch" onClick={() => window.dispatchEvent(new CustomEvent("as:pitch", { detail: p }))}><Wand2 className="text-saffron" /></Button></Tooltip>
           <Tooltip content={p.has_brief ? "View buyer brief" : "Build a buyer brief from their public statements"}>
-            <Button variant="ghost" size="icon-sm" onClick={() => onBrief(p)} aria-label="Buyer brief"><Sparkles className={cn(p.has_brief && "text-sponsor")} /></Button></Tooltip>
+            {p.has_brief
+              ? <Button variant="ghost" size="xs" onClick={() => onBrief(p)} aria-label="View buyer brief" className="text-sponsor hover:text-sponsor"><Sparkles />Brief</Button>
+              : <Button variant="ghost" size="icon-sm" onClick={() => onBrief(p)} aria-label="Build buyer brief"><Sparkles /></Button>}</Tooltip>
           {p.opener && <Tooltip content={p.opener || "Copy opener"}><Button variant="ghost" size="icon-sm" aria-label="Copy opener" onClick={() => { navigator.clipboard?.writeText(p.opener); toast.success("Opener copied"); }}><Copy /></Button></Tooltip>}
           {!p.email && <Tooltip content="Reveal email (1 Apollo credit)"><Button variant="ghost" size="icon-sm" aria-label="Get email" onClick={enrich} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : <Mail />}</Button></Tooltip>}
           <span className="mx-1 h-4 w-px bg-line" />
@@ -485,7 +487,9 @@ function PeopleTab({ id, onBrief }: any) {
               : <Tooltip content="Get email and LinkedIn (1 Apollo credit)"><Button variant="ghost" size="icon-sm" aria-label="Get email" disabled={enriching === n.id} onClick={() => enrich(n)}>
                 {enriching === n.id ? <Loader2 className="animate-spin" /> : <Mail />}</Button></Tooltip>}
             <Tooltip content={n.has_brief ? "View buyer brief" : "Build a buyer brief"}>
-              <Button variant="ghost" size="icon-sm" aria-label="Buyer brief" onClick={() => onBrief(person(n))}><Sparkles className={cn(n.has_brief && "text-sponsor")} /></Button></Tooltip>
+              {n.has_brief
+                ? <Button variant="ghost" size="xs" aria-label="View buyer brief" className="text-sponsor hover:text-sponsor" onClick={() => onBrief(person(n))}><Sparkles />Brief</Button>
+                : <Button variant="ghost" size="icon-sm" aria-label="Build buyer brief" onClick={() => onBrief(person(n))}><Sparkles /></Button>}</Tooltip>
             <Tooltip content="Write a pitch for outreach (Dripify sequence)">
               <Button variant="ghost" size="icon-sm" aria-label="Write pitch" onClick={() => window.dispatchEvent(new CustomEvent("as:pitch", { detail: person(n) }))}><Wand2 className="text-saffron" /></Button></Tooltip>
           </div>

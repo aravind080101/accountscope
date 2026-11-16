@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from . import alerts, config, db, feedback, llm, profiles, projects, tenancy
+from . import people as people_mod
 from .providers import apollo, builtwith, tavily, webtech
 from .taxonomy import CATEGORIES, STAGES, category
 
@@ -510,6 +511,8 @@ def _save_people_pool(company_id: int, people: list[dict], key_to_id: dict, sour
                 "SELECT full_name FROM person WHERE company_id=? AND apollo_id=?", (company_id, p["apollo_id"])).fetchone()
             if same:
                 name = same["full_name"]
+            else:
+                name = people_mod.canonical_name(s, company_id, name)   # "Dr. N. Kamakodi" = "Dr N Kamakodi"
             s.execute(
                 """INSERT INTO person(company_id, full_name, title, seniority, linkedin_url, apollo_id, source,
                    reports_to, reports_to_source, document_id) VALUES (?,?,?,?,?,?,?,?,?,?)
@@ -767,6 +770,8 @@ def _run(run_id: int, company_id: int, force: bool = False) -> None:
                         "SELECT id, full_name FROM person WHERE company_id=? AND apollo_id=?", (company_id, p["apollo_id"])).fetchone()
                     if same:
                         p = {**p, "full_name": same["full_name"]}
+                    else:
+                        p = {**p, "full_name": people_mod.canonical_name(s, company_id, p["full_name"])}
                     s.execute(
                         """INSERT INTO person(company_id, full_name, title, seniority, linkedin_url, apollo_id, source)
                            VALUES (?,?,?,?,?,?,?) ON CONFLICT(company_id, full_name) DO UPDATE SET
@@ -795,6 +800,13 @@ def _run(run_id: int, company_id: int, force: bool = False) -> None:
             log(f"{n_proj} client/partner project(s) found" + (f", {n_new} new" if n_new else ""))
         except Exception as exc:  # projects are additive; never fail the whole run over them
             log(f"Projects step failed: {exc}")
+
+        try:
+            merged = people_mod.merge_duplicates(company_id)
+            if merged:
+                log(f"Merged {merged} duplicate person record(s) (same name written differently)")
+        except Exception as exc:
+            log(f"Duplicate check skipped: {exc}")
 
         with db.session() as s:
             s.execute("UPDATE run SET status='done', finished_at=CURRENT_TIMESTAMP WHERE id=?", (run_id,))

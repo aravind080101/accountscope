@@ -66,7 +66,7 @@ export default function OutreachPage() {
             <Table>
               <thead><tr>
                 <Th className="w-10 pl-6"><Checkbox checked={rows.length > 0 && rows.every((r) => sel.has(r.id))} onCheckedChange={(v) => setSel(v ? new Set(rows.map((r) => r.id)) : new Set())} /></Th>
-                <Th>Person</Th><Th>Hook</Th><Th>Offer</Th><Th>Score</Th><Th>Status</Th><Th>Updated</Th><Th className="w-28 pr-6" />
+                <Th>Person</Th><Th>Hook</Th><Th>Offer</Th><Th>Score</Th><Th>Status</Th><Th>Updated</Th><Th className="w-36 pr-6" />
               </tr></thead>
               <tbody>{rows.map((p) => {
                 const busy = p.status === "queued" || p.status === "running";
@@ -92,8 +92,8 @@ export default function OutreachPage() {
                           <Button variant="ghost" size="icon-sm" aria-label={`Get email for ${p.full_name}`} disabled={enriching === p.person_id} onClick={() => enrich(p)}>
                             {enriching === p.person_id ? <Loader2 className="animate-spin" /> : <Mail />}</Button></span></Tooltip>}
                         <Tooltip content={p.has_brief ? "View buyer brief" : "Build a buyer brief"}><span>
-                          <Button variant="ghost" size="icon-sm" aria-label={`Buyer brief for ${p.full_name}`} onClick={() => setBrief({ person_id: p.person_id, full_name: p.full_name, title: p.title, company: p.company, has_brief: p.has_brief })}>
-                            <Sparkles className={cn(p.has_brief && "text-sponsor")} /></Button></span></Tooltip>
+                          <Button variant="ghost" size={p.has_brief ? "xs" : "icon-sm"} className={cn(p.has_brief && "text-sponsor hover:text-sponsor")} aria-label={`Buyer brief for ${p.full_name}`} onClick={() => setBrief({ person_id: p.person_id, full_name: p.full_name, title: p.title, company: p.company, has_brief: p.has_brief })}>
+                            <Sparkles />{p.has_brief && "Brief"}</Button></span></Tooltip>
                         <Tooltip content="Re-run the outreach messages"><span>
                           <Button variant="ghost" size="icon-sm" aria-label={`Re-run outreach for ${p.full_name}`} disabled={busy} onClick={() => rerun([p.id])}><RefreshCw /></Button></span></Tooltip>
                       </div></Td>

@@ -7,6 +7,7 @@ Reporting lines come from two places, and every edge says which:
 import re
 
 from . import db
+from . import people as people_mod
 
 FUNCTIONS = [  # checked in order; first match wins
     ("Quality", {"qa", "quality", "test", "testing", "sdet"}),
@@ -84,6 +85,10 @@ def _match_manager(ref: str, people: list[dict], me: dict) -> dict | None:
 
 
 def build(company_id: int) -> dict:
+    try:
+        people_mod.merge_duplicates(company_id)   # "R. Vijay Anandh" and "Vijay Anandh R" are one person
+    except Exception:
+        pass
     with db.session() as s:
         people = db.rows(s.execute(
             """SELECT p.id, full_name, title, seniority, source, reports_to, reports_to_source, linkedin_url, email,
