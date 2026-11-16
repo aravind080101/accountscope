@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Brain, ClipboardPaste, Loader2, MessageCircle, RefreshCw, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { Brain, ClipboardPaste, Heart, Loader2, MessageCircle, RefreshCw, Sparkles, Trash2, Wand2 } from "lucide-react";
 import * as D from "@radix-ui/react-dialog";
 import { api, post } from "@/lib/api";
 import { confirmCost } from "@/components/CostConfirm";
@@ -65,6 +65,7 @@ export function BriefSheet({ person, onClose, onBuilt }: { person: any; onClose:
                 {b.note && <p className="mt-1 text-[12.5px] text-saffron-ink">{txt(b.note)}</p>}</div>
               <VoiceCard v={b.voice} />
               <PersonalityCard p={b.personality} src={src} />
+              <AboutCard b={b} src={src} />
               <Samples pid={pid} onChange={() => build(true)} busy={busy} />
               {b.topics?.length > 0 && (
                 <div className="rounded-lg border border-line p-3"><div className="mb-2 text-[12px] font-semibold text-muted">What they've talked about</div>
@@ -215,5 +216,33 @@ function SourceList({ sources }: { sources: any[] }) {
           {x.url ? <a href={x.url} target="_blank" rel="noreferrer" className="truncate hover:underline">{x.title || x.url}</a> : <span className="truncate text-muted">{x.title}</span>}</li>))}</ul>
       <p className="mt-1 text-[11.5px] text-faint">Talks, podcasts, interviews and pasted text show how they really speak. Press quotes are usually polished, so they count least for voice.</p>
     </details>
+  );
+}
+
+const OPENER_LABEL: Record<string, string> = { L1: "Interest", L2: "Their words", L3: "Career choice", L4: "Roots", L5: "Current moment", L6: "What they protect" };
+
+/** Interests and person signals: what a connection note can open on. Any cited source counts here. */
+function AboutCard({ b, src }: { b: any; src: (n: number) => any }) {
+  const openers: any[] = b.openers || [];
+  const interests: any[] = b.personality?.interests || [];
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-muted"><Heart className="size-3.5" />About them
+        <span className="ml-auto font-normal text-faint">what a connection note can open on</span></div>
+      {b.openers === undefined ? (
+        <p className="text-[12.5px] text-muted">This brief was built before this section existed. Click <b>Refresh</b> to find their interests, career choices and current moments.</p>
+      ) : !openers.length && !interests.length ? (
+        <p className="text-[12.5px] text-muted">Nothing public found beyond their job. Paste a post or two below, or note what you know about them, then Refresh.</p>
+      ) : (
+        <ul className="space-y-1.5 text-[13px]">
+          {interests.map((x: any, i: number) => { const s = x.source != null ? src(x.source) : null; return (
+            <li key={"i" + i} className="flex items-start gap-2"><Badge tone="saffron">Interest</Badge><span className="flex-1">{txt(x)}</span>
+              {s?.url && <a className="text-[11.5px] text-faint hover:text-fg hover:underline" href={s.url} target="_blank" rel="noreferrer">source</a>}</li>); })}
+          {openers.map((o: any, i: number) => { const s = src(o.source); return (
+            <li key={"o" + i} className="flex items-start gap-2"><Badge tone={o.level === "L1" ? "saffron" : "outline"}>{OPENER_LABEL[o.level] || o.level}</Badge><span className="flex-1">{o.text}</span>
+              {s?.url && <a className="text-[11.5px] text-faint hover:text-fg hover:underline" href={s.url} target="_blank" rel="noreferrer">source</a>}</li>); })}
+        </ul>
+      )}
+    </div>
   );
 }

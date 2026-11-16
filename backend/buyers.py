@@ -135,10 +135,13 @@ def _clean_personality(raw, sources: list[dict]) -> dict:
                        "quote": t.get("quote") if lean != "unknown" else None,
                        "source": t.get("source") if lean != "unknown" else None}
 
-    def backed(items):
-        return [x for x in (items or []) if isinstance(x, dict) and x.get("text") and x.get("source") in first_hand][:5]
+    def backed(items, allowed):
+        return [x for x in (items or []) if isinstance(x, dict) and x.get("text") and x.get("source") in allowed
+                and not any(w in f" {str(x['text']).lower()} " for w in _PRIVATE)][:5]
     known = sum(1 for t in traits.values() if t["lean"] != "unknown")
-    return {"traits": traits, "values": backed(raw.get("values")), "interests": backed(raw.get("interests")),
+    # traits and values need their own words; an interest can come from any cited page (a bio, alumni page, race result)
+    any_source = set(range(len(sources)))
+    return {"traits": traits, "values": backed(raw.get("values"), first_hand), "interests": backed(raw.get("interests"), any_source),
             "summary": raw.get("summary") if known else None,
             "how_to_write": [x for x in (raw.get("how_to_write") or []) if isinstance(x, str)][:4] if known else [],
             "known": known}
@@ -312,7 +315,8 @@ Return {{
 {trait_guide}
   }},
   "values": [{{"text": something they repeatedly care about (mentoring, quality, customers...), "source": n}}],
-  "interests": [{{"text": an interest outside work they mention themselves (sport, books, a community), "source": n}}],
+  "interests": [{{"text": an interest or activity outside work (sport, books, music, a cause, a community, alumni group);
+                 any source may show it, including bios and event pages, "source": n}}],
   "summary": one sentence on their personality at work, only from the traits you could read,
   "how_to_write": [2-4 rules that follow from their personality, e.g. "challenge an assumption, they like debate"]
 }},

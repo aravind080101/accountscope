@@ -104,3 +104,14 @@ def test_same_person_written_differently_is_one_record():
         vijay = rows["Vijay Anandh R"]                       # the one with an email is kept
         assert vijay["id"] == b and s.execute("SELECT 1 FROM buyer_brief WHERE person_id=?", (b,)).fetchone()   # brief moved over
         assert "upto" in next(r["title"] for n, r in rows.items() if "Kamakodi" in n)               # former role stays visible
+
+
+def test_interests_can_come_from_any_cited_page_but_traits_need_their_words():
+    sources = [{"url": "a", "voice_value": "bio"}, {"url": "b", "voice_value": "written"}]
+    raw = {"traits": {}, "values": [{"text": "mentoring", "source": 0}],                       # bio only: not their words
+           "interests": [{"text": "Runs the Chennai marathon", "source": 0},                  # bio is fine for an interest
+                         {"text": "Weekends with his family", "source": 0},                    # private: dropped
+                         {"text": "Chess", "source": 7}]}                                       # no such source
+    p = buyers._clean_personality(raw, sources)
+    assert [x["text"] for x in p["interests"]] == ["Runs the Chennai marathon"]
+    assert p["values"] == []
