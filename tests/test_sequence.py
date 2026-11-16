@@ -156,3 +156,26 @@ def test_former_ceo_is_marked_and_kept_out_of_the_chart():
     o = orgchart.build(cid)
     assert {n["name"] for n in o["nodes"]} == {"R. Vijay Anandh", "Kamal Sabhlok"}
     assert [f["name"] for f in o["former"]] == ["Dr N Kamakodi"]
+
+
+def test_leadership_check_retires_people_recent_sources_say_have_left(monkeypatch):
+    from backend import people, db, config, llm
+    from backend.providers import tavily
+    with db.session() as s:
+        cid = s.execute("INSERT INTO company(name, domain) VALUES ('Any Corp', 'anycorp.test')").lastrowid
+        old = s.execute("INSERT INTO person(company_id, full_name, title) VALUES (?, 'Asha Rao', 'Chief Executive Officer')", (cid,)).lastrowid
+        new = s.execute("INSERT INTO person(company_id, full_name, title) VALUES (?, 'Ben Kurian', 'CEO')", (cid,)).lastrowid
+    monkeypatch.setattr(config, "TAVILY_API_KEY", "x")
+    monkeypatch.setattr(llm, "available", lambda: True)
+    monkeypatch.setattr(tavily, "raw_search", lambda q, **k: [{"url": "https://news.test/ceo", "title": "Ben Kurian takes charge",
+                                                               "published_at": "2026-07-01", "text": "Ben Kurian succeeded Asha Rao as CEO on 1 July 2026."}])
+    monkeypatch.setattr(llm, "complete_json", lambda *a, **k: {
+        "current": [{"role": "CEO", "name": "Ben Kurian", "since": "2026-07-01", "source": 0}],
+        "former": [{"name": "Asha Rao", "role": "CEO", "reason": "Succeeded by Ben Kurian on 1 July 2026", "source": 0},
+                   {"name": "Ben Kurian", "role": "CEO", "reason": "contradiction", "source": 0}]})   # contradictions are ignored
+    res = people.verify_leadership({"id": cid, "name": "Any Corp", "domain": "anycorp.test"})
+    people.refresh_status(cid)                      # title rules must not undo the check
+    with db.session() as s:
+        a = s.execute("SELECT current, left_note FROM person WHERE id=?", (old,)).fetchone()
+        b = s.execute("SELECT current FROM person WHERE id=?", (new,)).fetchone()
+    assert res["changed"] == 1 and a["current"] == 0 and "Succeeded by Ben Kurian" in a["left_note"] and b["current"] != 0

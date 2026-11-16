@@ -169,8 +169,95 @@ def refresh_status(company_id: int, today=None) -> int:
                 former += 1
                 if p.get("current") != 0 or p.get("left_note") != note:
                     s.execute("UPDATE person SET current=0, left_note=? WHERE id=?", (note, p["id"]))
-            elif cur is True and p.get("current") == 0:
+            elif cur is True and p.get("current") == 0 and not (p.get("left_note") or "").startswith("Leadership check"):
                 s.execute("UPDATE person SET current=1, left_note=NULL WHERE id=?", (p["id"],))
             elif p.get("current") == 0 and not p.get("left_note"):
                 former += 1   # marked by research ("left" in a document); keep it
     return former
+
+
+# ------------------------------------------------------------- who holds each top role today (any company)
+
+LEADERSHIP_SYSTEM = """You verify a company's CURRENT leadership as of today's date, from recent sources only.
+Sources often disagree because older articles name people who have since moved on. Prefer the most recent dated
+source, the company's own leadership or board page, stock-exchange filings and appointment announcements.
+An appointment that takes effect on a date that has passed means that person holds the role now and the previous
+holder does not. Never guess: if the sources don't settle a role, leave it out."""
+
+LEADERSHIP_ROLES = ["CEO", "Managing Director", "Chairman", "CFO", "CTO", "CIO", "COO", "Chief Risk Officer", "Chief Digital Officer"]
+
+
+def leadership_queries(name: str, domain: str | None) -> list[tuple[str, dict]]:
+    q = [(f'"{name}" CEO OR "managing director" appointed OR "takes charge" OR "steps down" OR succeeds', {"topic": "news", "days": 540}),
+         (f'"{name}" leadership team board of directors', {})]
+    if domain:
+        q.append((f"{name} leadership management team board", {"include_domains": [domain]}))
+    return q
+
+
+def verify_leadership(company: dict, today=None, log=lambda m: None) -> dict:
+    """Search recent sources for who holds each top role now, then mark anyone in our list who no longer does.
+    Works for any company. Returns {"current": [...], "former": [...], "changed": n}."""
+    from datetime import date
+    from . import config, db, llm
+    from .providers import tavily
+    today = today or date.today()
+    if not (config.TAVILY_API_KEY and llm.available()):
+        return {"current": [], "former": [], "changed": 0}
+    docs, seen = [], set()
+    for q, opts in leadership_queries(company["name"], company.get("domain")):
+        try:
+            for r in tavily.raw_search(q, max_results=6, **opts):
+                if r["url"] not in seen and r.get("text"):
+                    seen.add(r["url"])
+                    docs.append(r)
+        except Exception:
+            continue
+    if not docs:
+        return {"current": [], "former": [], "changed": 0}
+    with db.session() as s:
+        ours = db.rows(s.execute("SELECT id, full_name, title, current FROM person WHERE company_id=?", (company["id"],)))
+    listing = "\n\n".join(f"[{i}] {d.get('published_at') or 'undated'} | {d['title']}\n{d['url']}\n{d['text'][:1800]}"
+                          for i, d in enumerate(docs[:14]))
+    people_list = "\n".join(f"- {p['full_name']}: {p['title']}" for p in ours) or "- none"
+    out = llm.complete_json(LEADERSHIP_SYSTEM, f"""Company: {company['name']}{' (' + company['domain'] + ')' if company.get('domain') else ''}
+Today: {today.isoformat()}
+
+PEOPLE WE HAVE ON FILE (titles may be out of date):
+{people_list}
+
+RECENT SOURCES:
+{listing}
+
+Return {{"current": [{{"role": one of {LEADERSHIP_ROLES}, "name": full name, "since": "YYYY-MM-DD" or null,
+  "source": source number}}],
+"former": [{{"name": a person ON FILE who no longer holds the role their title shows, "role": that role,
+  "reason": one line, e.g. "Succeeded by X on 1 May 2026" or "Retired in March 2026", "source": source number}}]}}
+Only include what the sources clearly support.""", 1800)
+    current = [c for c in (out.get("current") or []) if isinstance(c, dict) and c.get("name") and isinstance(c.get("source"), int)]
+    former = [f for f in (out.get("former") or []) if isinstance(f, dict) and f.get("name") and isinstance(f.get("source"), int)]
+    by_key = {}
+    for p in ours:
+        k = name_key(p["full_name"])
+        if k:
+            by_key.setdefault(k, []).append(p)
+    current_keys = {name_key(c["name"]) for c in current}
+    changed = 0
+    with db.session() as s:
+        for f in former:
+            k = name_key(f["name"])
+            if not k or k in current_keys:   # never retire someone the same check says is current
+                continue
+            for p in by_key.get(k, []):
+                src = docs[f["source"]]["url"] if 0 <= f["source"] < len(docs) else ""
+                note = "Leadership check: " + (f.get("reason") or "no longer in this role")[:160] + (f" ({src})" if src else "")
+                s.execute("UPDATE person SET current=0, left_note=? WHERE id=?", (note, p["id"]))
+                changed += 1
+        for c in current:
+            for p in by_key.get(name_key(c["name"]), []):
+                if p.get("current") == 0:   # a newer source says they hold a top role now
+                    s.execute("UPDATE person SET current=1, left_note=NULL WHERE id=?", (p["id"],))
+                    changed += 1
+    log(f"Leadership check: {len(current)} current role holder(s) confirmed from {len(docs)} recent source(s)"
+        + (f"; {changed} person record(s) updated" if changed else ""))
+    return {"current": current, "former": former, "changed": changed}

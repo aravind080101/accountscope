@@ -792,6 +792,21 @@ def person_cost(pid: int, action: str, force: bool = False):
     raise HTTPException(400, "action must be enrich, brief or pitch")
 
 
+@app.post("/api/accounts/{cid}/leadership")
+def check_leadership(cid: int):
+    """Re-check who holds each top role today from recent sources (about 3 searches and 1 AI call)."""
+    guard.company(cid)
+    if not (config.TAVILY_API_KEY and llm.available()):
+        raise HTTPException(400, "The leadership check needs TAVILY_API_KEY and an AI key")
+    from . import people as people_mod
+    with db.session() as s:
+        company = dict(s.execute("SELECT * FROM company WHERE id=?", (cid,)).fetchone())
+    people_mod.merge_duplicates(cid)
+    res = people_mod.verify_leadership(company)
+    people_mod.refresh_status(cid)
+    return res
+
+
 @app.get("/api/accounts/{cid}/offerings")
 def account_offerings(cid: int, refresh: bool = False):
     """Which of your offerings to pitch to this company: 0-100 each, lead / secondary / don't pitch."""

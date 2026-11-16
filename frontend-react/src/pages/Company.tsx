@@ -452,6 +452,15 @@ function PeopleTab({ id, onBrief }: any) {
   const { data: o, reload } = useApi<any>(`/api/accounts/${id}/org`);
   const [hl, setHl] = useState("");
   const [enriching, setEnriching] = useState<number | null>(null);
+  const [checking, setChecking] = useState(false);
+  const checkLeadership = async () => {
+    setChecking(true);
+    try {
+      const r = await post(`/api/accounts/${id}/leadership`);
+      toast.success(r.changed ? `Updated ${r.changed} person record(s) from recent sources` : `Confirmed ${r.current?.length || 0} current role holder(s); nothing out of date`);
+      reload();
+    } catch (e: any) { toast.error(e.message); } finally { setChecking(false); }
+  };
   const enrich = async (n: any) => {
     if (!(await confirmCost(`/api/people/${n.id}/cost?action=enrich`, `Get ${n.name}'s email?`, "Get email"))) return;
     setEnriching(n.id);
@@ -506,6 +515,8 @@ function PeopleTab({ id, onBrief }: any) {
         <span>{o.nodes.length} people · <b className="text-fg">{o.confirmed}</b> reporting lines confirmed by a source · <b className="text-fg">{o.inferred}</b> inferred from titles</span>
         <span className="inline-flex items-center gap-1.5"><i className="w-5 border-t-2 border-ink" />confirmed</span>
         <span className="inline-flex items-center gap-1.5"><i className="w-5 border-t-2 border-dashed border-[#c5c7d6]" />inferred</span>
+        <Tooltip content="Search recent news, filings and the company's leadership page for who holds each top role today (about 3 searches and 1 AI call)">
+          <Button size="sm" variant="outline" disabled={checking} onClick={checkLeadership}>{checking ? <Loader2 className="animate-spin" /> : <RefreshCw />}Check current leadership</Button></Tooltip>
         {inits.length > 0 && <label className="ml-auto flex items-center gap-2">Highlight
           <select value={hl} onChange={(e) => setHl(e.target.value)} className="h-7 rounded-md border border-line bg-white px-2 text-[12.5px]">
             <option value="">all initiatives</option>{inits.map((i) => <option key={i.id} value={String(i.id)}>{i.name}</option>)}</select></label>}

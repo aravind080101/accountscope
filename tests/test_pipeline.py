@@ -55,6 +55,8 @@ def connected(monkeypatch):
     monkeypatch.setattr(config, "TAVILY_API_KEY", "test")
     monkeypatch.setattr(config, "APOLLO_API_KEY", "test")
     monkeypatch.setattr(tavily, "search", lambda name, domain=None: [dict(d) for d in DOCS])
+    from backend import people as _people   # the leadership check searches the web; tests stub it
+    monkeypatch.setattr(_people, "verify_leadership", lambda *a, **k: {"current": [], "former": [], "changed": 0})
     def fake_json(system, prompt, *a, **k):
         if "profile companies" in system:
             return LLM["describe"]

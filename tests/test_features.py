@@ -57,6 +57,8 @@ def install_fakes(monkeypatch):
     state = {"docs": DOCS_V1, "extract": EXTRACT_V1}
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "x")
     monkeypatch.setattr(config, "TAVILY_API_KEY", "x")
+    from backend import people as _people   # the leadership check searches the web; tests stub it
+    monkeypatch.setattr(_people, "verify_leadership", lambda *a, **k: {"current": [], "former": [], "changed": 0})
     monkeypatch.setattr(config, "APOLLO_API_KEY", "x")
     monkeypatch.setattr(config, "COMPETITORS_TEST", True, raising=False)
 

@@ -812,6 +812,7 @@ def _run(run_id: int, company_id: int, force: bool = False) -> None:
             merged = people_mod.merge_duplicates(company_id)
             if merged:
                 log(f"Merged {merged} duplicate person record(s) (same name written differently)")
+            people_mod.verify_leadership({**company, "id": company_id}, log=log)   # who holds the top roles today
             gone = people_mod.refresh_status(company_id)
             if gone:
                 log(f"{gone} person(s) have left their role (e.g. succeeded); kept as former, not suggested as contacts")
