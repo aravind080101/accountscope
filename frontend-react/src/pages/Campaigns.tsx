@@ -20,7 +20,7 @@ export default function CampaignsPage({ id, refresh }: { id?: number; refresh: (
 /* ------------------------------------------------------------------ list */
 
 function CampaignList() {
-  const { data, reload } = useApi<any[]>("/api/campaigns");
+  const { data, error, reload } = useApi<any[]>("/api/campaigns");
   const [name, setName] = useState(""); const [desc, setDesc] = useState(""); const [busy, setBusy] = useState(false);
   const create = async () => {
     setBusy(true);
@@ -37,7 +37,8 @@ function CampaignList() {
           <div><Label>What it's about (optional)</Label><Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="e.g. Indian banks moving core or net banking platforms" /></div>
           <Button onClick={create} disabled={busy || !name.trim()}>{busy ? <Loader2 className="animate-spin" /> : <Plus />}Create</Button>
         </div>
-        {!data ? <Loader2 className="size-5 animate-spin text-muted" /> : !data.length ? (
+        {error && !data ? <LoadError error={error} onRetry={reload} />
+          : !data ? <Loader2 className="size-5 animate-spin text-muted" /> : !data.length ? (
           <Empty icon={<Megaphone />} title="No campaigns yet">Create one, add its decks, then find companies that need it.</Empty>
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{data.map((c) => (
@@ -55,7 +56,7 @@ function CampaignList() {
 /* ------------------------------------------------------------------ one campaign */
 
 function CampaignDetail({ id, refresh }: { id: number; refresh: () => void }) {
-  const { data: c, reload } = useApi<any>(`/api/campaigns/${id}`, [], (d) => d?.accounts?.some((a: any) => a.status === "queued" || a.status === "running"), 5000);
+  const { data: c, error, reload } = useApi<any>(`/api/campaigns/${id}`, [], (d) => d?.accounts?.some((a: any) => a.status === "queued" || a.status === "running"), 5000);
   const [busy, setBusy] = useState("");
   const [url, setUrl] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -73,7 +74,7 @@ function CampaignDetail({ id, refresh }: { id: number; refresh: () => void }) {
     if (c?.profile?.target_regions?.length) setRegion(c.profile.target_regions);
   }, [c?.profile]); // eslint-disable-line
 
-  if (!c) return <div className="p-6"><Loader2 className="size-5 animate-spin text-muted" /></div>;
+  if (!c) return <div className="p-6">{error ? <LoadError error={error} onRetry={reload} /> : <Loader2 className="size-5 animate-spin text-muted" />}</div>;
   const p = c.profile;
 
   const upload = async (files: FileList | null) => {
@@ -230,6 +231,20 @@ function CampaignDetail({ id, refresh }: { id: number; refresh: () => void }) {
         </div>
       )}
       <PitchSheet person={pitchOpen} onClose={() => setPitchOpen(null)} onChanged={reloadPitches} />
+    </div>
+  );
+}
+
+/** Never spin forever: say what went wrong. A 404 here almost always means the server is still on an older version. */
+function LoadError({ error, onRetry }: { error: string; onRetry: () => void }) {
+  const old = /not found|404/i.test(error);
+  return (
+    <div className="max-w-[760px] rounded-lg border border-line bg-white p-4 text-[13px]">
+      <b className="font-semibold">{old ? "The server doesn't have Campaigns yet" : "Couldn't load campaigns"}</b>
+      <p className="mt-1 text-muted">{old
+        ? "The screens are updated but the app server is still on the previous version. Wait until Render shows the latest deploy as Live, then retry."
+        : error}</p>
+      <Button size="sm" variant="outline" className="mt-3" onClick={onRetry}>Retry</Button>
     </div>
   );
 }
