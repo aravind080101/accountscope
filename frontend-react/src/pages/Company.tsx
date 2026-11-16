@@ -126,12 +126,12 @@ function InitiativesTab({ d, reload, act, onBrief, seller }: any) {
   const [open, setOpen] = useState<Record<number, boolean>>(() => (d.initiatives[0] ? { [d.initiatives[0].id]: true } : {}));
   const people = useMemo(() => {
     const m = new Map<string, any>();
-    d.initiatives.forEach((i: any) => i.contacts.filter((p: any) => p.feedback !== "rejected" && ["Owner", "Sponsor"].includes(p.role))
+    d.initiatives.forEach((i: any) => i.contacts.filter((p: any) => p.feedback !== "rejected" && p.current !== 0 && ["Owner", "Sponsor"].includes(p.role))
       .forEach((p: any) => { if (!m.has(p.full_name)) m.set(p.full_name, { ...p, projects: [i.name] }); else m.get(p.full_name).projects.push(i.name); }));
     const linked = [...m.values()].sort((a, b) => (a.role === "Owner" ? -1 : 1) - (b.role === "Owner" ? -1 : 1) || b.score - a.score).slice(0, 8);
     // Top leaders and anyone with a brief show too, even when no initiative names them (e.g. a new CEO)
     const seen = new Set(linked.map((p) => p.full_name));
-    const leaders = (d.people || []).filter((p: any) => !seen.has(p.full_name) && (p.has_brief || LEADER.test(p.title || "")))
+    const leaders = (d.people || []).filter((p: any) => !seen.has(p.full_name) && p.current !== 0 && (p.has_brief || LEADER.test(p.title || "")))
       .sort((a: any, b: any) => leaderRank(a) - leaderRank(b)).slice(0, 6).map((p: any) => ({ ...p, role: "Leader" }));
     return [...linked, ...leaders];
   }, [d]);
@@ -292,7 +292,8 @@ function ContactRow({ p, act, onBrief, base = "/api/contacts" }: any) {
         <div className="flex items-center gap-2.5">
           <Avatar name={p.full_name} size={28} />
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 font-medium">{p.full_name}{p.feedback === "confirmed" && <Badge tone="green">Right person</Badge>}</div>
+            <div className="flex items-center gap-1.5 font-medium">{p.full_name}{p.feedback === "confirmed" && <Badge tone="green">Right person</Badge>}
+              {p.current === 0 && <Tooltip content={p.left_note || "Has left this role"}><span><Badge tone="red">Left the role</Badge></span></Tooltip>}</div>
             <div className="truncate text-[12px] text-faint">{p.title}</div>
             {(p.email || p.linkedin_url) && <div className="flex gap-2 text-[12px]">{p.email && <a className="text-sponsor hover:underline" href={`mailto:${p.email}`}>{p.email}</a>}{p.linkedin_url && <a className="text-sponsor hover:underline" href={p.linkedin_url} target="_blank" rel="noreferrer">LinkedIn</a>}</div>}
             {masked && <div className="text-[11.5px] text-faint">Surname hidden until Get email (1 Apollo credit)</div>}
@@ -510,6 +511,20 @@ function PeopleTab({ id, onBrief }: any) {
             <option value="">all initiatives</option>{inits.map((i) => <option key={i.id} value={String(i.id)}>{i.name}</option>)}</select></label>}
       </div>
       <div className="rounded-lg border border-line bg-white p-4">{roots.map((r: any) => <Node key={r.id} n={r} depth={0} />)}</div>
+      {o.former?.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">Former · no longer in these roles</div>
+          <div className="space-y-1.5">{o.former.map((n: any) => (
+            <div key={n.id} className="flex items-center gap-2.5 rounded-lg border border-dashed border-line bg-canvas px-3 py-2 opacity-80">
+              <Avatar name={n.name} size={26} />
+              <div className="min-w-0 flex-1"><div className="font-medium">{n.name}</div>
+                <div className="truncate text-[12px] text-faint">{n.title}{n.left_note ? ` · ${n.left_note}` : ""}</div></div>
+              <Tooltip content={n.has_brief ? "View buyer brief" : "Build a buyer brief"}>
+                <Button variant="ghost" size="icon-sm" aria-label="Buyer brief" onClick={() => onBrief({ person_id: n.id, full_name: n.name, title: n.title, has_brief: n.has_brief })}>
+                  <Sparkles className={cn(n.has_brief && "text-sponsor")} /></Button></Tooltip>
+            </div>))}</div>
+        </div>
+      )}
     </div>
   );
 }

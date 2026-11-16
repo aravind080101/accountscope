@@ -132,3 +132,27 @@ def test_deck_passages_only_when_they_match_the_need():
     assert got and got[0]["doc"] == "Banking deck" and all(m["doc"] != "CEO post" for m in got)   # POV material isn't offerings
     assert all(m["doc"] != "OTT deck" for m in got)
     assert profiles.relevant_material("hospital patient scheduling for clinics") == []           # nothing fits: nothing used
+
+
+def test_former_ceo_is_marked_and_kept_out_of_the_chart():
+    from datetime import date
+    from backend import people, db, orgchart
+    T = date(2026, 11, 16)
+    assert people.role_status("Managing Director & CEO (upto April 30, 2026)", T)[0] is False
+    assert people.role_status("MD & CEO (w.e.f. May 1, 2026)", T)[0] is True
+    assert people.role_status("CEO w.e.f. 01.01.2027", T)[0] is False          # not started yet
+    assert people.role_status("Chief Business Officer", T) == (None, None)
+    with db.session() as s:
+        cid = s.execute("INSERT INTO company(name) VALUES ('Succession Bank')").lastrowid
+        old = s.execute("INSERT INTO person(company_id, full_name, title) VALUES (?, 'Dr N Kamakodi', 'MD & CEO')", (cid,)).lastrowid
+        new = s.execute("INSERT INTO person(company_id, full_name, title) VALUES (?, 'R. Vijay Anandh', 'MD & CEO (w.e.f. May 1, 2026)')",
+                        (cid,)).lastrowid
+        s.execute("INSERT INTO person(company_id, full_name, title) VALUES (?, 'Kamal Sabhlok', 'Chief Business Officer')", (cid,))
+    assert people.refresh_status(cid, T) == 1
+    with db.session() as s:
+        r = s.execute("SELECT current, left_note FROM person WHERE id=?", (old,)).fetchone()
+        assert r["current"] == 0 and "Succeeded by R. Vijay Anandh" in r["left_note"]
+        assert s.execute("SELECT current FROM person WHERE id=?", (new,)).fetchone()["current"] != 0
+    o = orgchart.build(cid)
+    assert {n["name"] for n in o["nodes"]} == {"R. Vijay Anandh", "Kamal Sabhlok"}
+    assert [f["name"] for f in o["former"]] == ["Dr N Kamakodi"]

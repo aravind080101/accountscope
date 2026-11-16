@@ -853,6 +853,9 @@ def _run(pitch_id: int) -> None:
             _log(pitch_id, f"Objections step failed: {exc}")
 
         warnings = []
+        if ctx["person"].get("current") == 0:
+            warnings.append(f"{ctx['person']['full_name']} may no longer hold this role ({ctx['person'].get('left_note') or 'marked former'}). "
+                            "Check before sending, or pitch whoever holds the role now.")
         if not ctx["person"].get("linkedin_url"):
             warnings.append("No LinkedIn URL yet. Dripify needs it: click Get email to fetch it.")
         if "*" in ctx["person"]["full_name"]:
@@ -901,7 +904,8 @@ def top_contacts(company_id: int, limit: int = 5, min_fit: float = 0.5) -> list[
                  SELECT pc.person_id, pc.score * COALESCE(pr.fit_score, 0) FROM project_contact pc
                    JOIN project pr ON pr.id=pc.project_id
                    WHERE pr.company_id=? AND COALESCE(pr.fit_score,0) >= ? AND COALESCE(pc.feedback,'')!='rejected'
-                     AND COALESCE(pr.feedback,'')!='dismissed')
+                     AND COALESCE(pr.feedback,'')!='dismissed') x
+               WHERE person_id NOT IN (SELECT id FROM person WHERE current=0)
                GROUP BY person_id ORDER BY s DESC LIMIT ?""", (company_id, min_fit, company_id, min_fit, limit)).fetchall()
     return [r["person_id"] for r in rows]
 

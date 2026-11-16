@@ -464,7 +464,8 @@ MIGRATIONS = {
     "feedback": [("workspace_id", "INTEGER NOT NULL DEFAULT 1")],
     "document": [("fetched_at", "TEXT")],
     "run": [("updated_at", "TEXT")],
-    "person": [("function", "TEXT"), ("reports_to", "TEXT"), ("reports_to_source", "TEXT"), ("document_id", "INTEGER")],
+    "person": [("function", "TEXT"), ("reports_to", "TEXT"), ("reports_to_source", "TEXT"), ("document_id", "INTEGER"),
+               ("current", "INTEGER"), ("left_note", "TEXT")],   # current: 0 = has left the role (NULL = assumed current)
     "initiative": [("feedback", "TEXT"), ("basis", "TEXT")],
     "vendor": [("deal_type", "TEXT"), ("deal_value", "TEXT"), ("deal_date", "TEXT"), ("duration", "TEXT"), ("scope", "TEXT")],
     "initiative_contact": [("feedback", "TEXT"), ("source", "TEXT")],

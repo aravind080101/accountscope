@@ -87,17 +87,21 @@ def _match_manager(ref: str, people: list[dict], me: dict) -> dict | None:
 def build(company_id: int) -> dict:
     try:
         people_mod.merge_duplicates(company_id)   # "R. Vijay Anandh" and "Vijay Anandh R" are one person
+        people_mod.refresh_status(company_id)     # who has left a role (e.g. a CEO succeeded on 1 May)
     except Exception:
         pass
     with db.session() as s:
         people = db.rows(s.execute(
             """SELECT p.id, full_name, title, seniority, source, reports_to, reports_to_source, linkedin_url, email,
+                      current, left_note,
                       EXISTS(SELECT 1 FROM buyer_brief b WHERE b.person_id=p.id) has_brief FROM person p WHERE company_id=?""",
             (company_id,)))
         links = db.rows(s.execute(
             """SELECT ic.person_id, ic.role, ic.feedback, i.id initiative_id, i.name initiative FROM initiative_contact ic
                JOIN initiative i ON i.id=ic.initiative_id WHERE i.company_id=? AND COALESCE(i.feedback,'')!='dismissed'""",
             (company_id,)))
+    former = [p for p in people if p.get("current") == 0]
+    people = [p for p in people if p.get("current") != 0]
     rejected = {(l["person_id"]) for l in links if l["feedback"] == "rejected"}
     people = [p for p in people if p["id"] not in rejected or any(l["person_id"] == p["id"] and l["feedback"] != "rejected" for l in links)]
     for p in people:
@@ -136,5 +140,8 @@ def build(company_id: int) -> dict:
               "source": p["source"], "linkedin_url": p["linkedin_url"], "email": p.get("email"),
               "has_brief": bool(p.get("has_brief")), "initiatives": p["initiatives"]} for p in people]
     nodes.sort(key=lambda n: (n["rank"], n["function"], n["name"]))
-    return {"nodes": nodes, "edges": edges,
+    former_nodes = [{"id": p["id"], "name": p["full_name"], "title": p["title"], "left_note": p.get("left_note"),
+                     "linkedin_url": p["linkedin_url"], "email": p.get("email"), "has_brief": bool(p.get("has_brief"))}
+                    for p in former]
+    return {"nodes": nodes, "edges": edges, "former": former_nodes,
             "confirmed": sum(e["kind"] == "confirmed" for e in edges), "inferred": sum(e["kind"] == "inferred" for e in edges)}

@@ -587,7 +587,7 @@ def account_detail(cid: int):
             i["contacts"] = db.rows(
                 s.execute(
                     """SELECT ic.id, ic.role, ic.score, ic.rationale, ic.opener, ic.feedback, p.id person_id, p.full_name, p.title, p.email,
-                       (SELECT 1 FROM buyer_brief b WHERE b.person_id=p.id) has_brief,
+                       p.current, p.left_note, (SELECT 1 FROM buyer_brief b WHERE b.person_id=p.id) has_brief,
                        p.phone, p.linkedin_url, ic.source FROM initiative_contact ic JOIN person p ON p.id=ic.person_id
                        WHERE ic.initiative_id=? ORDER BY ic.feedback='confirmed' DESC, ic.score DESC""",
                     (i["id"],),
@@ -602,7 +602,7 @@ def account_detail(cid: int):
         unread = s.execute("SELECT COUNT(*) n FROM alert WHERE company_id=? AND read=0", (cid,)).fetchone()["n"]
         doc_mix = db.rows(s.execute("SELECT source_type, COUNT(*) n FROM document WHERE company_id=? GROUP BY source_type", (cid,)))
         # everyone found at the account, so leaders and anyone with a brief show even if no initiative names them
-        people = db.rows(s.execute("""SELECT p.id person_id, p.full_name, p.title, p.linkedin_url, p.email,
+        people = db.rows(s.execute("""SELECT p.id person_id, p.full_name, p.title, p.linkedin_url, p.email, p.current, p.left_note,
        (SELECT 1 FROM buyer_brief b WHERE b.person_id=p.id) has_brief FROM person p WHERE p.company_id=?""", (cid,)))
     return {"company": company, "people": people, "initiatives": inits, "projects": projects.for_company(cid), "run": run, "documents": docs, "dismissed": dismissed,
             "unread_alerts": unread, "source_mix": {r["source_type"]: r["n"] for r in doc_mix},

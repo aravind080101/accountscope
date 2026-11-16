@@ -245,7 +245,8 @@ Return {{
   "owner_titles": [2-4 job titles at {company['name']} who would run or own this engagement],
   "doc": document key, "quote": exact short quote}}],
 "tech": [{{"name": technology, product or platform {company['name']} uses, "doc": document key}}],
-"people": [{{"name": full name, "title": as written, "reports_to": manager name or title if stated, else null, "doc": document key}}]
+"people": [{{"name": full name, "title": as written, "reports_to": manager name or title if stated, else null, "doc": document key,
+  "current": false ONLY if a document says they have left, retired, stepped down or been succeeded in this role, else true}}]
 }}
 "locations" are {company['name']}'s own sites (offices, R&D/engineering centres, GCCs, plants), not its customers'.
 "job_locations" has one entry per job post in the documents, so hiring by city can be counted.
@@ -435,6 +436,8 @@ def candidate_people(company: dict, init: dict, profile: dict, fb: dict | None =
             people.append({**f, "source": source, "involvement": ""})
     if fb:  # never re-suggest someone your team rejected for this kind of initiative
         people = [p for p in people if fb["people"].get((p["full_name"].lower(), init["category"])) != "rejected"]
+    # never suggest someone who has left the role ("upto April 30, 2026", "former", or succeeded)
+    people = [p for p in people if p.get("current") is not False and people_mod.role_status(p.get("title") or "")[0] is not False]
     return people
 
 
@@ -515,15 +518,16 @@ def _save_people_pool(company_id: int, people: list[dict], key_to_id: dict, sour
                 name = people_mod.canonical_name(s, company_id, name)   # "Dr. N. Kamakodi" = "Dr N Kamakodi"
             s.execute(
                 """INSERT INTO person(company_id, full_name, title, seniority, linkedin_url, apollo_id, source,
-                   reports_to, reports_to_source, document_id) VALUES (?,?,?,?,?,?,?,?,?,?)
+                   reports_to, reports_to_source, document_id, current) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(company_id, full_name) DO UPDATE SET
+                   current=CASE WHEN excluded.current=0 THEN 0 ELSE current END,
                    title=COALESCE(excluded.title, title), seniority=COALESCE(excluded.seniority, seniority),
                    linkedin_url=COALESCE(excluded.linkedin_url, linkedin_url), apollo_id=COALESCE(excluded.apollo_id, apollo_id),
                    reports_to=CASE WHEN excluded.reports_to_source='evidence' THEN excluded.reports_to ELSE reports_to END,
                    reports_to_source=CASE WHEN excluded.reports_to_source='evidence' THEN 'evidence' ELSE reports_to_source END""",
                 (company_id, name, p.get("title"), p.get("seniority"), p.get("linkedin_url"), p.get("apollo_id"), source,
                  p.get("reports_to"), "evidence" if p.get("reports_to") and source == "evidence" else None,
-                 key_to_id.get(p.get("doc"))),
+                 key_to_id.get(p.get("doc")), 0 if p.get("current") is False else None),
             )
 
 
@@ -780,9 +784,12 @@ def _run(run_id: int, company_id: int, force: bool = False) -> None:
                         (company_id, p["full_name"], p.get("title"), p.get("seniority"), p.get("linkedin_url"),
                          p.get("apollo_id"), p["source"]),
                     )
-                    pid = s.execute(
-                        "SELECT id FROM person WHERE company_id=? AND full_name=?", (company_id, p["full_name"])
-                    ).fetchone()["id"]
+                    prow = s.execute(
+                        "SELECT id, current FROM person WHERE company_id=? AND full_name=?", (company_id, p["full_name"])
+                    ).fetchone()
+                    pid = prow["id"]
+                    if prow["current"] == 0:   # has left this company role: not a contact
+                        continue
                     msg = opener(p, init, company, profile, fit_reason)
                     pv = fb["people"].get((p["full_name"].lower(), init["category"]))
                     s.execute(
@@ -805,6 +812,9 @@ def _run(run_id: int, company_id: int, force: bool = False) -> None:
             merged = people_mod.merge_duplicates(company_id)
             if merged:
                 log(f"Merged {merged} duplicate person record(s) (same name written differently)")
+            gone = people_mod.refresh_status(company_id)
+            if gone:
+                log(f"{gone} person(s) have left their role (e.g. succeeded); kept as former, not suggested as contacts")
         except Exception as exc:
             log(f"Duplicate check skipped: {exc}")
 
