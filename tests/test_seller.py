@@ -163,7 +163,7 @@ def test_pitch_agent_loops_until_the_buyer_would_reply(monkeypatch):
             assert "SI already owns testing" in prompt
             return {"angles": [{"hook": "CoreSoft cutover", "basis": "company_signal", "technical_insight": "loan state migrations",
                                 "offering": "Managed QA", "offer": "Release-risk review", "strength": 8}], "chosen": 0}
-        if "WRITER" in system:
+        if system.startswith("You are the WRITER"):
             seen["writer"] += 1
             assert "how are in-flight loans being tested" in prompt    # winning non-bland hook is the required opener
             if seen["writer"] == 1:
@@ -181,6 +181,21 @@ def test_pitch_agent_loops_until_the_buyer_would_reply(monkeypatch):
             return {"connection": {"accept": good, "reaction": "ok" if good else "generic"}, "message_1": {"reply": good, "reaction": "."},
                     "refutes": [] if good else ["Sounds like every vendor"], "scores": {}, "overall": 8 if good else 3,
                     "fixes": [] if good else ["Name the cutover"]}
+        if "CONVERSATION WRITER" in system:
+            assert "connection_note: Hi Ravi, moving loan states" in prompt     # continues the winning thread
+            seen["seq"] = seen.get("seq", 0) + 1
+            if seen["seq"] == 1:   # first draft names the seller too early and asks for time: must be rewritten
+                return {"warmup": ["Follow Ravi"], "mirror": "Moolya can help. Can we do a 20 minute call?", "advice": "", "give": "x",
+                        "reveal": "x", "interest_check": "x", "contact": "x", "specific_ask": "x"}
+            assert "BROKE THESE RULES" in prompt and "before stage 6" in prompt
+            return {"warmup": ["Follow Ravi", "Comment on the CoreSoft go-live post"],
+                    "mirror": "That makes sense. Mid-cycle loans are where the old and new cores disagree. Which product line worries you most?",
+                    "advice": "You've run two core moves before. What would you do differently on this one?",
+                    "give": "One pattern I keep seeing: totals reconcile but per-loan schedules drift after backdated changes. Useful?",
+                    "reveal": "Fair question. I work on testing at Zen QA, mostly migrations like this. How is your team splitting the cutover tests?",
+                    "interest_check": "Worth comparing notes on how you're approaching the cutover?",
+                    "contact": "I have a one-page cutover checklist that reads better as a PDF. What's the best email to send it to?",
+                    "specific_ask": "Would 15 minutes on Thursday at 4pm work to walk through it against your plan?"}
         if "OBJECTIONS" in system:
             return {"objections": [{"objection": "We have in-house QA", "likelihood": "high",
                                     "responses": [{"label": "Complement", "reply": "Makes sense..."}]}]}
@@ -197,6 +212,8 @@ def test_pitch_agent_loops_until_the_buyer_would_reply(monkeypatch):
     assert not d["warnings"]
     assert d["hooks"][0]["style"] == "sharp_question" and d["hooks"][-1]["generic"]   # bland hook loses despite a high score
     assert d["triggers"][0]["type"] == "commitment" and d["why"]["still_open"][0]["refute"] == "SI already owns testing"
+    assert seen["seq"] == 2 and d["messages"]["contact"].endswith("send it to?") and not d["sequence_issues"]   # stages 3-9 rewritten until clean
+    assert d["warmup"] == ["Follow Ravi", "Comment on the CoreSoft go-live post"]
 
     edited = client.put(f"/api/pitches/{p['id']}", json={"messages": {"message_1": "Edited.", "message_3": "ignored"}, "status": "approved"}).json()
     assert edited["data"]["messages"]["message_1"] == "Edited." and "message_3" not in edited["data"]["messages"] and edited["status"] == "approved"

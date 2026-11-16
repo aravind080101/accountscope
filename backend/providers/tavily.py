@@ -104,3 +104,13 @@ def search(company: str, domain: str | None = None) -> list[dict]:
         add("project", raw_search("case study client success story project delivered", max_results=5,
                                   include_domains=[domain], full_text=True), check_name=False)
     return out
+
+
+def extract(url: str) -> dict:
+    """Full text of one public page (Tavily Extract). Returns {url, title, text}."""
+    resp = httpx.post("https://api.tavily.com/extract", json={"urls": [url]},
+                      headers={"Authorization": f"Bearer {config.TAVILY_API_KEY}"}, timeout=60)
+    resp.raise_for_status()
+    results = resp.json().get("results") or []
+    text = (results[0].get("raw_content") if results else "") or ""
+    return {"url": url, "title": url, "text": text}

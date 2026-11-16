@@ -148,16 +148,48 @@ def seller_sources():
 
 
 @app.post("/api/profile/sources")
-async def upload_sources(files: list[UploadFile] = File(...)):
+async def upload_sources(files: list[UploadFile] = File(...), kind: str = "deck"):
+    """kind=deck: what you sell (offerings). kind=pov: the CEO's/founder's decks, posts and talks (points of view)."""
+    if kind not in ("deck", "pov"):
+        raise HTTPException(400, "kind must be deck or pov")
     added, errors = [], []
     for f in files:
         try:
-            added.append(profiles.add_source(f.filename, "deck", profiles.read_file(f.filename, await f.read())))
+            added.append(profiles.add_source(f.filename, kind, profiles.read_file(f.filename, await f.read())))
         except Exception as exc:
             errors.append(f"{f.filename}: {exc}")
     if errors and not added:
         raise HTTPException(400, "; ".join(errors))
     return {"added": added, "errors": errors}
+
+
+class PovUrlIn(BaseModel):
+    url: str
+
+
+@app.post("/api/profile/pov/url")
+def add_pov_url(body: PovUrlIn):
+    """Add a public page by the CEO/founder (blog post, article, talk transcript) to the POV library."""
+    if not config.TAVILY_API_KEY:
+        raise HTTPException(400, "Reading a page needs TAVILY_API_KEY")
+    from .providers import tavily
+    try:
+        page = tavily.extract(body.url)
+        return profiles.add_source(page["title"], "pov", page["text"][:60_000], body.url)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, f"Couldn't read that page: {config.redact(str(exc))}") from exc
+
+
+@app.post("/api/profile/pov")
+def build_pov():
+    if not llm.available():
+        raise HTTPException(400, "Building points of view needs an AI key")
+    try:
+        return profiles.build_pov()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.delete("/api/profile/sources/{sid}")
@@ -758,6 +790,15 @@ def person_cost(pid: int, action: str, force: bool = False):
     if action == "pitch":
         return costs.pitches([pid])
     raise HTTPException(400, "action must be enrich, brief or pitch")
+
+
+@app.get("/api/accounts/{cid}/offerings")
+def account_offerings(cid: int, refresh: bool = False):
+    """Which of your offerings to pitch to this company: 0-100 each, lead / secondary / don't pitch."""
+    guard.company(cid)
+    if not llm.available():
+        raise HTTPException(400, "Ranking offerings needs an AI key")
+    return profiles.rank_offerings(cid, refresh)
 
 
 @app.get("/api/accounts/{cid}/pitches/cost")

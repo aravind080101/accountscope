@@ -32,7 +32,7 @@ def test_cost_estimates():
     p = c.get(f"/api/people/{a}/cost?action=pitch", headers=H).json()
     ai = next(l for l in p["lines"] if "AI calls" in l["amount"])
     lo, hi = [int(x) for x in ai["amount"].split()[0].split("–")]
-    assert lo == 1 + 6 + 2 and hi == 1 + 6 + 2 * pitch.MAX_ROUNDS
+    assert lo == 1 + 7 + 2 and hi == 1 + 7 + 2 * pitch.MAX_ROUNDS
 
     # a saved, fresh brief means no search credits
     with db.session() as s:

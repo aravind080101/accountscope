@@ -10,12 +10,14 @@ Agents, in order (each logs a step the UI shows):
                    technical insight an expert tester would raise, and picks one give-first offer.
   4. Hooks       - six opening lines in different styles; the simulated person sees only the LinkedIn
                    preview and picks the one that would make them stop scrolling.
-  5. Writer      - writes the connection note (opening on the winning hook), three follow-ups and an email.
+  5. Writer      - writes the connection note (opening on the winning hook, about THEM) and Message 1.
   4. Buyer       - plays the person (skeptical, busy, gets 30 vendor messages a week), reacts to each
      simulator     message, scores it and says what would make them ignore or refute it.
   5. Loop        - the writer revises from that critique until the simulated buyer would accept and
                    reply (score >= PASS_SCORE), switching to the next angle if one keeps failing.
-  6. Objections  - likely push-backs ("we have in-house QA", "send a deck") with ready replies.
+  6. Sequence    - stages 3-9 of the conversation (mirror, advice, give, natural reveal, interest check,
+                   contact, specific ask) plus warm-up actions. The seller is never named before stage 6.
+  7. Objections  - likely push-backs ("we have in-house QA", "send a deck") with ready replies.
 
 Nothing is sent automatically. Pitches are reviewed, edited and exported as a CSV for Dripify.
 """
@@ -36,7 +38,10 @@ TIME_ASK = re.compile(r"\b\d+\s*-?\s*min(ute)?s?\b|\b(call|meeting|demo|calendar
                       r"chat this week|book a|set up a time|free next week|available (this|next) week)\b", re.I)
 BANNED = ["hope this finds you", "i came across your profile", "i'd love to connect", "synergy", "leverage", "cutting-edge",
           "world-class", "best-in-class", "game-changer", "seamless", "robust solution", "touch base", "quick call",
-          "reach out", "pick your brain", "revolutionize", "end-to-end solutions", "one-stop"]
+          "reach out", "pick your brain", "revolutionize", "end-to-end solutions", "one-stop", "not a claim about",
+          "control case", "rely on it", "we help companies"]
+# Stats and client counts read like a brochure in a first touch ("50,000+ engineers", "25 countries").
+BROCHURE_STATS = re.compile(r"\b\d[\d,.]*\s*\+|\b\d[\d,.]*\s+(countries|engineers|clients|customers|users|testers|companies)\b", re.I)
 
 
 # ------------------------------------------------------------------ storage
@@ -100,7 +105,7 @@ def update_messages(pitch_id: int, messages: dict, status: str | None = None) ->
     if not p:
         raise LookupError("Pitch not found")
     data = p["data"]
-    data["messages"] = {**(data.get("messages") or {}), **{k: v for k, v in messages.items() if k in MESSAGE_KEYS}}
+    data["messages"] = {**(data.get("messages") or {}), **{k: v for k, v in messages.items() if k in ALL_KEYS}}
     with db.session() as s:
         s.execute("UPDATE pitch SET data=?, status=COALESCE(?, status), updated_at=CURRENT_TIMESTAMP WHERE id=?",
                   (json.dumps(data), status, pitch_id))
@@ -108,6 +113,30 @@ def update_messages(pitch_id: int, messages: dict, status: str | None = None) ->
 
 
 MESSAGE_KEYS = ["connection_note", "message_1"]
+# Stages 3-9 are written once the opener passes the simulated buyer. Sent by hand as the conversation moves;
+# stage 3 onward should be adapted to their actual reply before sending.
+SEQUENCE = [  # key, label, when to send, character limit, rule for the writer
+    ("mirror", "3 · Mirror & deepen", "After their first real reply", 500,
+     "Pick up their point (write it as if they agreed with Message 1's observation), add one small insight from their "
+     "background, and ask one follow-up question. No seller name."),
+    ("advice", "4 · Ask for advice", "After they reply to 3", 500,
+     "Ask for their expert view, rooted in their career or what they've said. They teach, you learn. No seller name."),
+    ("give", "5 · Give", "After they reply to 4", 500,
+     "One useful, specific insight from the seller's experience phrased as 'I keep seeing...' (use a proof point's "
+     "learning, never a client name or number). Expertise visible, seller NOT named. May end with 'useful?'."),
+    ("reveal", "6 · Natural reveal", "When they ask what you do, or after 5 lands", 400,
+     "One plain line on what the sender does, naming the seller once and the fitting offering in everyday words, "
+     "then hand the conversation back with a question about their situation."),
+    ("interest_check", "7 · Interest check", "After 6", 400,
+     "Ask for interest, not time: e.g. 'Worth comparing notes on how you're approaching X?'. No call, no minutes."),
+    ("contact", "8 · Contact", "After a yes or maybe", 400,
+     "Offer the give-first offer as something that reads better as a PDF or doc, and ask for the best email. Email only."),
+    ("specific_ask", "9 · Specific ask", "After an email exchange", 400,
+     "One specific day and time for 15 minutes, tied to the pain they named. No deck."),
+]
+SEQUENCE_KEYS = [k for k, *_ in SEQUENCE]
+SEQUENCE_LIMITS = {k: lim for k, _, _, lim, _ in SEQUENCE}
+ALL_KEYS = MESSAGE_KEYS + SEQUENCE_KEYS
 
 
 # ------------------------------------------------------------------ 1. research
@@ -200,19 +229,23 @@ Strongest first, 3-6 triggers."""
     return {"triggers": trig, "dismiss_reasons": [str(x) for x in (out.get("dismiss_reasons") or [])][:6]}
 
 
+# The connection note is about THEM: who they are, what they chose, what they said. Risks and failure modes
+# belong later in the conversation, not in a stranger's first line.
 HOOK_STYLES = {
+    "interest": "open on an interest, activity or cause from OPENERS (L1) and link it lightly to their role",
+    "career_choice": "open on a telling career choice or their roots (L3/L4) and ask what drew them to it",
+    "moment": "open on a current moment of theirs (L5): new role, milestone, talk, launch",
     "their_words": "echo something they said and push it one step further",
-    "sharp_question": "a precise technical question about their exact situation that they can't answer instantly",
-    "risk": "name the specific failure mode their work is about to run into",
-    "contrarian": "challenge a common belief that is wrong for their situation",
-    "timing": "tie to a deadline, go-live or fresh event of theirs",
-    "peer_pattern": "what teams in their position usually get wrong (no invented clients or numbers)",
+    "curiosity": "a question about how THEY think or decide, rooted in their background, that they'd enjoy answering",
+    "timing": "tie to a deadline, go-live or fresh event of theirs, framed around them, not a risk",
 }
 
-HOOK_WRITER = """You are the HOOK WRITER. Write opening lines for a LinkedIn connection note. Each must name something
-specific to this person (their words, system, migration, client, deadline) within the first 12 words, create
-curiosity or mild tension, and contain no pitch, no seller name, no compliment and no greeting beyond "Hi <name>,".
-Under 160 characters each. One hook per style."""
+HOOK_WRITER = """You are the HOOK WRITER. Write opening lines for a LinkedIn connection note. Each must be about THIS
+person (an interest, a career choice, their roots, a current moment, their own words, a go-live they own) and name
+something specific to them within the first 12 words. Create curiosity, not alarm: never open on a failure scenario
+or a risk at their company. No pitch, no seller name, no stats, no compliment, no greeting beyond "Hi <name>,".
+If a style needs an OPENER level that isn't available, use the strongest opener there is instead. Never invent
+interests or facts. Under 160 characters each. One hook per style."""
 
 HOOK_JUDGE = """You are a HOOK JUDGE playing the person described. You see only the LinkedIn notification preview: the
 first line of a connection request from a stranger. You get dozens a week and ignore almost all. For each hook, say
@@ -255,7 +288,7 @@ Return {{"verdicts": [{{"n": number, "stop": 1-10 (how likely you open it), "rea
         pass
     for h in cands:
         h["stop"] = h.get("stop", 0.0)
-        h["generic"] = bool(bland_line(h["line"], ctx))
+        h["generic"] = bool(bland_line(h["line"], ctx, brief))
     cands.sort(key=lambda h: (not h["generic"], h["stop"]), reverse=True)
     return cands
 
@@ -305,7 +338,23 @@ Offerings:
 Give-first offers (use ONLY these, by exact name):
 {offers or '- none listed: suggest a short, low-effort conversation only'}
 Proof points (use ONLY these; never invent clients or numbers):
-{proof or '- none'}"""
+{proof or '- none'}{_pov_block(profile)}"""
+
+
+def _pov_block(profile: dict) -> str:
+    """The founder/CEO's points of view, used as the thinking behind the messages, never quoted as theirs."""
+    pov = profile.get("pov") or {}
+    angles = "\n".join(f"- {a.get('statement')}" + (f" (frame: {a['frame']})" if a.get("frame") else "")
+                       for a in (pov.get("angles") or [])[:12] if a.get("statement"))
+    if not angles:
+        return ""
+    v = pov.get("voice") or {}
+    voice = (f"\nHouse voice: {v.get('tone') or ''}. Use: {', '.join(v.get('use') or [])}. Avoid: {', '.join(v.get('avoid') or [])}."
+             if v else "")
+    return f"""
+Points of view from the seller's leadership (frame questions and insights through ONE that fits this person; use as
+your own thinking, never as a quote or "our CEO says"):
+{angles}{voice}"""
 
 
 def _txt(x) -> str:
@@ -339,6 +388,9 @@ def _buyer_block(ctx: dict, brief: dict) -> str:
     personality = ("; ".join(read) + (f". Values: {', '.join(x['text'] for x in pers.get('values') or [])}" if pers.get("values") else "")
                    + (f". Write for this personality: {'; '.join(pers.get('how_to_write') or [])}" if pers.get("how_to_write") else "")) \
         if read else "unknown (nothing first-hand to judge from): don't assume a personality"
+    openers = "\n".join(f"- {o['level']}: {o['text']}" for o in (brief.get("openers") or [])) or \
+        "- none sourced: fall back to their current moment (new role, milestone) or what they protect, from the material above"
+    interests = "; ".join(_txt(x) for x in pers.get("interests") or []) or "none found"
     return f"""PERSON: {p['full_name']}, {p.get('title') or 'title unknown'} at {p['company']} ({p.get('industry') or ''}, {p.get('hq_country') or ''})
 Company: {p.get('company_summary') or ''}
 What they have said themselves:
@@ -353,17 +405,22 @@ Their company's work they are linked to:
 Company tech: {', '.join(ctx['tech'][:20]) or 'unknown'}
 Vendors and partners: {vendors}
 HOW THEY COMMUNICATE: {voice}
-PERSONALITY (from their own words): {personality}"""
+PERSONALITY (from their own words): {personality}
+INTERESTS they mention themselves: {interests}
+OPENERS (person signals for the connection note; L1 interest, L2 their words, L3 career choice, L4 roots, L5 moment, L6 what they protect):
+{openers}"""
 
 
-def strategize(ctx: dict, brief: dict, profile: dict, trig: dict | None = None) -> dict:
+def strategize(ctx: dict, brief: dict, profile: dict, trig: dict | None = None, ranked: list | None = None) -> dict:
     trig = trig or {}
+    ranking = "; ".join(f"{r['offering']} {r['score']}/100 ({r['label']})" for r in (ranked or [])[:5]) or "not ranked"
     prompt = f"""{_seller_block(profile)}
 
 {_buyer_block(ctx, brief)}
 
 What hits them (build angles on the strongest of these): {json.dumps(trig.get('triggers', []))}
 Why they'd ignore a vendor (angles must get past these): {json.dumps(trig.get('dismiss_reasons', []))}
+Offerings ranked for this company (prefer the lead offering unless this person's role points to another): {ranking}
 
 Return {{"angles": [{{
   "hook": the specific thing to open on (their statement, their migration/launch, a project with a named client),
@@ -377,7 +434,12 @@ Return {{"angles": [{{
   "proof": one proof point from the list that fits, or null,
   "why_they_care": one sentence tied to their priorities or concerns,
   "strength": 1-10 }}],
-"chosen": index of the strongest angle, "skip_reason": null, or a reason this person is a poor target right now}}
+"chosen": index of the strongest angle, "skip_reason": null, or a reason this person is a poor target right now,
+"approach": {{"role_in_deal": "economic_buyer" | "champion" | "technical_evaluator" | "user" | "gatekeeper" | "not_relevant",
+  "decision": "pitch" (owns or champions the problem) | "warm only" (build the relationship, don't bring an offering:
+              senior but adjacent, or runs an in-house team that competes with the seller) | "do not pitch" (unrelated
+              function, too junior to influence, procurement before a champion exists, competitor staff),
+  "reason": one line}}}}
 Give 2-4 angles, strongest first."""
     out = llm.complete_json(STRATEGIST, prompt, 2500)
     angles = [a for a in (out.get("angles") or []) if isinstance(a, dict) and a.get("hook")]
@@ -388,7 +450,8 @@ Give 2-4 angles, strongest first."""
     except (TypeError, ValueError):
         chosen = 0
     order = [chosen] + [i for i in range(len(angles)) if i != chosen]
-    return {"angles": [angles[i] for i in order], "skip_reason": out.get("skip_reason")}
+    approach = out.get("approach") if isinstance(out.get("approach"), dict) else {}
+    return {"angles": [angles[i] for i in order], "skip_reason": out.get("skip_reason"), "approach": approach}
 
 
 # ------------------------------------------------------------------ 3. writer
@@ -397,16 +460,21 @@ Give 2-4 angles, strongest first."""
 WRITER = f"""You are the WRITER of LinkedIn outreach for a B2B seller. Rules:
 - The connection note MUST open with the chosen opening hook (lightly edited at most). Every later message
   keeps that thread going; it must not restart with a generic line.
-- Open on the hook, about THEM. No greetings beyond "Hi <first name>,". No compliments, no "I came across your profile".
-- One technical observation or question that shows expertise in their exact situation. Specific nouns: system names,
-  migration steps, device types, failure modes. No generic "quality matters".
+- Open on the hook, about THEM: an interest, a career choice, their roots, a current moment, their own words. Never
+  open on a failure scenario at their company. No greetings beyond "Hi <first name>,". No compliments, no
+  "I came across your profile".
+- Message 1 carries one technical observation or question that shows expertise in their exact situation, framed
+  through their world (and, if given, one of the leadership points of view). Specific nouns: system names,
+  migration steps, failure modes. No generic "quality matters".
 - Two messages only. The goal is to START A CONVERSATION, not to sell or book time.
 - The connection note asks for nothing and does not pitch.
 - Message 1 (after they accept) continues the same thread: one sharp, non-obvious insight about their exact
   situation, then the conversation starter: a question they'd want to answer, or an offer to SEND something useful.
   It ends with one easy question that needs no meeting.
 - NEVER ask for time: no calls, meetings, demos, "15/30/45 minutes", calendar links or "this week". No service
-  pitch, no list of capabilities. The seller may be named once at most in Message 1, only if it helps credibility.
+  pitch, no list of capabilities, no stats or client counts ("50,000+ engineers", "25 countries").
+- Never name the seller, its products or offerings in either message: their LinkedIn profile does the introducing.
+  Never defend the message ("this isn't a claim about...").
 - Write in THEIR voice, following "HOW THEY COMMUNICATE": match their register, length, directness and the way
   they make a point (numbers vs stories), reuse a word or phrase they actually use where natural, and obey every
   "write to them like this" rule. Two people with different voices must get differently written messages.
@@ -446,9 +514,12 @@ GENERIC = ["quality engineering", "testing services", "qa services", "solutions"
            "partner with", "our team", "we specialize", "we are a", "i am from", "i'm from", "industry leader"]
 
 
-def _specific_terms(ctx: dict) -> set[str]:
-    """Words that only make sense for this person: their tech, initiative/project names, counterparties, company."""
+def _specific_terms(ctx: dict, brief: dict | None = None) -> set[str]:
+    """Words that only make sense for this person: their tech, initiative/project names, counterparties, company,
+    and the person signals (interests, career, roots, moments) found in their brief."""
     words = set()
+    for o in (brief or {}).get("openers") or []:
+        words |= {x.lower() for x in re.findall(r"[A-Za-z][A-Za-z0-9+.-]{4,}", o.get("text", ""))}
     for t in ctx["tech"] + [x for w in ctx["works"] for x in w["tech"]]:
         words.add(t.lower())
     for w in ctx["works"]:
@@ -456,22 +527,39 @@ def _specific_terms(ctx: dict) -> set[str]:
     for v in ctx["vendors"]:
         words.add(v["name"].lower())
     words.add(ctx["person"]["company"].lower().split()[0])
-    return {w for w in words if len(w) >= 3} - {"with", "from", "platform", "programme", "program", "project", "initiative", "rollout"}
+    return {w for w in words if len(w) >= 3} - {"with", "from", "platform", "programme", "program", "project", "initiative", "rollout",
+                                                 "their", "about", "which", "where", "there", "these", "joined", "years"}
 
 
-def bland_line(line: str, ctx: dict) -> str | None:
+def bland_line(line: str, ctx: dict, brief: dict | None = None) -> str | None:
     head = line.lower()[:170]
-    if not any(t in head for t in _specific_terms(ctx)):
+    if not any(t in head for t in _specific_terms(ctx, brief)):
         return "The opening names nothing specific to them. Put their system, project, client or own words in the first line."
     return None
 
 
-def lint(msgs: dict, ctx: dict | None = None, seller: str = "") -> list[str]:
-    """Hard checks the simulator might miss: length limits, banned phrases, placeholders, bland openings."""
+def _offering_names(profile: dict | None) -> list[str]:
+    return [o["name"] for o in (profile or {}).get("offerings", []) if len(o.get("name", "")) > 6]
+
+
+def lint(msgs: dict, ctx: dict | None = None, seller: str = "", brief: dict | None = None,
+         profile: dict | None = None) -> list[str]:
+    """Hard checks the simulator might miss: length limits, banned phrases, placeholders, bland openings,
+    and selling too early (seller/offering names or brochure stats in the first two messages)."""
     issues = []
     note = msgs.get("connection_note", "")
+    m1 = msgs.get("message_1", "")
+    if seller and seller.lower() in m1.lower():
+        issues.append(f"Don't name {seller} in Message 1. Let the conversation start first; their LinkedIn profile shows who you are.")
+    for name in _offering_names(profile):
+        if name.lower() in (note + " " + m1).lower():
+            issues.append(f"Don't name the offering '{name}' in the first two messages.")
+    for k in MESSAGE_KEYS:
+        st = BROCHURE_STATS.search(msgs.get(k, ""))
+        if st:
+            issues.append(f'{k} quotes a stat ("{st.group(0)}"). It reads like a brochure; drop it.')
     if ctx and note:
-        b = bland_line(note, ctx)
+        b = bland_line(note, ctx, brief)
         if b:
             issues.append(b)
         body = re.sub(r"^hi [^,]+,\s*", "", note.strip(), flags=re.I).lower()
@@ -487,7 +575,7 @@ def lint(msgs: dict, ctx: dict | None = None, seller: str = "") -> list[str]:
             issues.append(f"{k} is {len(msgs[k])} characters; the limit is {lim}. Cut it.")
         if not msgs.get(k):
             issues.append(f"{k} is empty.")
-    text = " ".join(msgs.values()).lower()
+    text = " ".join(msgs.get(k, "") for k in MESSAGE_KEYS).lower()
     for b in BANNED:
         if b in text:
             issues.append(f'Remove the phrase "{b}".')
@@ -495,7 +583,7 @@ def lint(msgs: dict, ctx: dict | None = None, seller: str = "") -> list[str]:
         m = TIME_ASK.search(msgs.get(k, ""))
         if m:
             issues.append(f'{k} asks for time ("{m.group(0)}"). Do not ask for a call or minutes; end with a question they want to answer.')
-    if re.search(r"\[[^\]]+\]|\{[^}]+\}|<[^>]+>", " ".join(msgs.values())):
+    if re.search(r"\[[^\]]+\]|\{[^}]+\}|<[^>]+>", " ".join(msgs.get(k, "") for k in MESSAGE_KEYS)):
         issues.append("Remove placeholders like [name] or {company}; write the real text.")
     return issues
 
@@ -541,6 +629,86 @@ def passed(sim: dict, issues: list[str]) -> bool:
         pass
     return (not issues and sim["overall"] >= PASS_SCORE and (sim.get("connection") or {}).get("accept") is True
             and (sim.get("message_1") or {}).get("reply") is True)
+
+
+# ------------------------------------------------------------------ 5b. the rest of the conversation
+
+
+SEQUENCE_WRITER = """You are the CONVERSATION WRITER. The connection note and Message 1 are done. Write what comes next,
+stage by stage, so the conversation builds trust before anything is pitched. Same person, same thread, and the same
+voice rules (follow HOW THEY COMMUNICATE and their personality). The seller is NEVER named before stage 6 (reveal).
+No calls, meetings or minutes before stage 9. Plain sentences, no lists, no hype, no stats or client counts.
+Never invent facts, clients or numbers; use only the proof points and offers given. Each later stage will be
+adapted to their real reply, so write natural continuations that still read well on their own."""
+
+
+def lint_sequence(msgs: dict, seller: str = "", profile: dict | None = None) -> list[str]:
+    issues = []
+    early = ("mirror", "advice", "give")
+    names = ([seller] if seller else []) + _offering_names(profile)
+    for k, label, _, lim, _ in SEQUENCE:
+        v = msgs.get(k, "")
+        if not v:
+            issues.append(f"{label} is empty.")
+            continue
+        low = v.lower()
+        if len(v) > lim:
+            issues.append(f"{label} is {len(v)} characters; the limit is {lim}.")
+        for b in BANNED:
+            if b in low:
+                issues.append(f'{label}: remove "{b}".')
+        if k in early:
+            for n in names:
+                if n.lower() in low:
+                    issues.append(f"{label}: don't name {n} before stage 6.")
+            st = BROCHURE_STATS.search(v)
+            if st:
+                issues.append(f'{label}: drop the stat "{st.group(0)}".')
+        if k != "specific_ask":
+            m = TIME_ASK.search(v)
+            if m:
+                issues.append(f'{label} asks for time ("{m.group(0)}"); only stage 9 does that.')
+        if k in ("mirror", "advice", "interest_check", "reveal") and "?" not in v:
+            issues.append(f"{label} should end with a question.")
+        if k == "contact" and "email" not in low:
+            issues.append(f"{label} must ask for their email.")
+        if re.search(r"\{[^}]+\}|<[^>]+>", v):
+            issues.append(f"{label}: remove placeholders.")
+    return issues
+
+
+def sequence(ctx: dict, brief: dict, profile: dict, angle: dict, msgs: dict, trig: dict | None = None) -> tuple[dict, list[str]]:
+    """Stages 3-9 plus warm-up actions, checked by lint_sequence and rewritten once if needed."""
+    first = ctx["person"]["full_name"].split()[0]
+    stages = "\n".join(f"- {k} ({label}; send: {when}; max {lim} chars): {rule}" for k, label, when, lim, rule in SEQUENCE)
+    seller = profile.get("company", "")
+    critique, out, issues = "", {}, []
+    for _ in range(2):
+        prompt = f"""{_seller_block(profile)}
+
+{_buyer_block(ctx, brief)}
+
+ANGLE: {json.dumps({k: angle.get(k) for k in ('hook', 'technical_insight', 'conversation_starter', 'offering', 'offer', 'proof', 'why_they_care')})}
+WHY THEY'D IGNORE A VENDOR: {json.dumps((trig or {}).get('dismiss_reasons', []))}
+ALREADY SENT:
+connection_note: {msgs.get('connection_note', '')}
+message_1: {msgs.get('message_1', '')}
+First name: {first}
+
+STAGES TO WRITE:
+{stages}
+{critique}
+Return {{"warmup": [2-3 things to do BEFORE sending the invite: follow them, a thoughtful comment on a recent post of theirs
+or their company's, timing the invite to a fresh event], {", ".join(f'"{k}": str' for k in SEQUENCE_KEYS)}}}"""
+        out = llm.complete_json(SEQUENCE_WRITER, prompt, 2500)
+        out = out if isinstance(out, dict) else {}
+        seq = {k: str(out.get(k) or "").strip() for k in SEQUENCE_KEYS}
+        issues = lint_sequence(seq, seller, profile)
+        if not issues:
+            break
+        critique = "\nYOUR LAST DRAFT BROKE THESE RULES, FIX EVERY ONE:\n" + "\n".join(f"- {i}" for i in issues)
+    warmup = [str(x) for x in (out.get("warmup") or []) if x][:3]
+    return {"messages": seq, "warmup": warmup}, issues
 
 
 # ------------------------------------------------------------------ 6. objections
@@ -593,8 +761,14 @@ def _run(pitch_id: int) -> None:
         if trig["triggers"]:
             _log(pitch_id, f"Strongest trigger ({trig['triggers'][0].get('type')}): {trig['triggers'][0]['what']}")
 
+        try:
+            ranked = profiles.rank_offerings(ctx["person"]["company_id"])
+        except Exception:
+            ranked = []
+        if ranked:
+            _log(pitch_id, f"Best offering for {ctx['person']['company']}: {ranked[0]['offering']} ({ranked[0]['score']}/100, {ranked[0]['label']})")
         _log(pitch_id, "Strategist: finding angles where their world meets what you sell")
-        strat = strategize(ctx, brief, profile, trig)
+        strat = strategize(ctx, brief, profile, trig, ranked)
         angles = strat["angles"]
         _log(pitch_id, f"{len(angles)} angle(s); starting with: {angles[0]['hook']}")
 
@@ -616,7 +790,7 @@ def _run(pitch_id: int) -> None:
             hook = pick_hook(a)
             _log(pitch_id, f"Round {n}: writing" + (" a revision" if msgs else ""))
             msgs = write(ctx, brief, profile, angle, msgs, critique, hook, trig)
-            issues = lint(msgs, ctx, profile.get("company", ""))
+            issues = lint(msgs, ctx, profile.get("company", ""), brief, profile)
             sim = simulate(ctx, brief, msgs)
             rounds.append({"n": n, "angle": a, "hook": hook["line"] if hook else None, "messages": msgs, "simulation": sim, "lint": issues})
             verdict = ("accepts" if (sim.get("connection") or {}).get("accept") else "ignores") + " the invite, " + \
@@ -631,6 +805,15 @@ def _run(pitch_id: int) -> None:
             if tries_on_angle >= 2 and sim["overall"] < 6 and a + 1 < len(angles):
                 a, msgs, critique, tries_on_angle = a + 1, None, [], 0
                 _log(pitch_id, f"Angle isn't landing; switching to: {angles[a]['hook']}")
+
+        _log(pitch_id, "Writing the rest of the conversation: mirror, advice, give, reveal, interest check, contact, specific ask")
+        try:
+            seq, seq_issues = sequence(ctx, brief, profile, angles[best["angle"]], best["messages"], trig)
+        except Exception as exc:
+            seq, seq_issues = {"messages": {}, "warmup": []}, [f"Couldn't write stages 3-9: {exc}"]
+        if seq_issues:
+            _log(pitch_id, f"Stages 3-9: {len(seq_issues)} rule issue(s) left to review")
+        messages = {**best["messages"], **seq["messages"]}
 
         _log(pitch_id, "Explaining why it should land and what could still get it refuted")
         why = explain(ctx, brief, trig, rounds, best)
@@ -649,10 +832,19 @@ def _run(pitch_id: int) -> None:
         if not brief.get("first_hand"):
             warnings.append("Nothing first-hand from this person was found, so the hook rests on their company's work and the tone is a "
                             "neutral default. Paste a few things they wrote or said (LinkedIn posts, comments, talk quotes) in the box below, then regenerate.")
+        approach = strat.get("approach") or {}
+        if approach.get("decision") == "do not pitch":
+            warnings.append(f"Approach: don't pitch this person ({approach.get('reason') or 'poor fit'}). Pick someone else at this account.")
+        elif approach.get("decision") == "warm only":
+            warnings.append(f"Approach: warm only ({approach.get('reason') or ''}). Build the relationship and skip the offer stages.")
+        if seq_issues:
+            warnings.append("Stages 3-9 still break some rules; review them: " + "; ".join(seq_issues[:4]))
         if best is not rounds[-1] or not passed(best["simulation"], best["lint"]):
             warnings.append(f"Best draft scored {best['simulation']['overall']:g}/10 against a pass mark of {PASS_SCORE:g}. Review before sending.")
         data = {"angle": angles[best["angle"]], "angles": angles, "triggers": trig["triggers"],
-                "dismiss_reasons": trig["dismiss_reasons"], "hooks": hook_sets.get(best["angle"], []), "why": why, "messages": best["messages"], "simulation": best["simulation"],
+                "dismiss_reasons": trig["dismiss_reasons"], "hooks": hook_sets.get(best["angle"], []), "why": why, "messages": messages, "simulation": best["simulation"],
+                "warmup": seq["warmup"], "approach": approach, "sequence_issues": seq_issues, "offering_rank": ranked[:5],
+                "openers": brief.get("openers") or [],
                 "rounds": rounds, "objections": objs, "warnings": warnings, "skip_reason": strat.get("skip_reason"),
                 "research": {"first_hand": brief.get("first_hand", 0), "topics": brief.get("topics") or [], "voice": brief.get("voice") or {},
                              "sources": brief.get("sources") or [], "style": brief.get("communication_style")},
@@ -700,7 +892,7 @@ def dripify_csv(pitch_ids: list[int]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["LinkedIn URL", "First name", "Last name", "Company", "Title", "Email", "Connection note", "Message 1",
-                "Hook", "Offer after reply", "Score"])
+                *[label for _, label, *_ in SEQUENCE], "Hook", "Offer after reply", "Approach", "Score"])
     for pid in pitch_ids:
         p = get(pid)
         if not p or p["status"] not in ("ready", "approved", "exported"):
@@ -708,8 +900,9 @@ def dripify_csv(pitch_ids: list[int]) -> str:
         m = p["data"].get("messages") or {}
         parts = p["full_name"].split()
         w.writerow([p.get("linkedin_url") or "", parts[0], " ".join(parts[1:]), p["company"], p.get("title") or "", p.get("email") or "",
-                    m.get("connection_note", ""), m.get("message_1", ""), (p["data"].get("angle") or {}).get("hook", ""),
-                    (p["data"].get("angle") or {}).get("offer", ""), p.get("score") or ""])
+                    m.get("connection_note", ""), m.get("message_1", ""), *[m.get(k, "") for k in SEQUENCE_KEYS],
+                    (p["data"].get("angle") or {}).get("hook", ""), (p["data"].get("angle") or {}).get("offer", ""),
+                    (p["data"].get("approach") or {}).get("decision", ""), p.get("score") or ""])
     with db.session() as s:
         s.executemany("UPDATE pitch SET status='exported' WHERE id=? AND status IN ('ready','approved')", [(i,) for i in pitch_ids])
     return buf.getvalue()

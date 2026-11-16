@@ -95,6 +95,8 @@ SOURCE_FAMILIES = [
         "include_domains": ["medium.com", "substack.com", "dev.to", "hashnode.dev", "hackernoon.com", "linkedin.com",
                             "slideshare.net", "speakerdeck.com", "quora.com", "x.com", "twitter.com", "github.com"]}),
     ("news", "quoted", '"{name}" said OR says', {"topic": "news", "days": 730}),
+    # person signals for the connection note: interests, causes, roots, milestones
+    ("interests", "bio", '"{name}" marathon OR hobby OR "outside work" OR alumni OR volunteer OR mentor OR award OR book', {}),
 ]
 
 
@@ -140,6 +142,25 @@ def _clean_personality(raw, sources: list[dict]) -> dict:
             "summary": raw.get("summary") if known else None,
             "how_to_write": [x for x in (raw.get("how_to_write") or []) if isinstance(x, str)][:4] if known else [],
             "known": known}
+
+
+OPENER_LEVELS = ("L1", "L2", "L3", "L4", "L5", "L6")
+_PRIVATE = ("family", "wife", "husband", "son ", "daughter", "child", "kids", "health", "illness", "religio", "temple",
+            "church", "mosque", "caste", "politic", "election", "salary", "net worth", "debt", "divorce", "pregnan")
+
+
+def clean_openers(raw, n_sources: int) -> list[dict]:
+    """Person signals for the connection note, strongest level first. Each must cite a source; private topics dropped."""
+    out = []
+    for o in raw if isinstance(raw, list) else []:
+        if not isinstance(o, dict) or o.get("level") not in OPENER_LEVELS or not o.get("text"):
+            continue
+        if not isinstance(o.get("source"), int) or not 0 <= o["source"] < n_sources:
+            continue
+        if any(w in f" {o['text'].lower()} " for w in _PRIVATE):
+            continue
+        out.append({"level": o["level"], "text": str(o["text"]).strip(), "source": o["source"]})
+    return sorted(out, key=lambda o: o["level"])[:6]
 
 
 def search_plan(name: str, company: str, title: str, domain: str | None = None) -> list[tuple]:
@@ -295,6 +316,16 @@ Return {{
   "summary": one sentence on their personality at work, only from the traits you could read,
   "how_to_write": [2-4 rules that follow from their personality, e.g. "challenge an assumption, they like debate"]
 }},
+"openers": [{{  // PERSON SIGNALS a connection note can open on, about THEM, not their company's risks.
+               // Fill as many levels as the sources support; any source type counts (bios and news are fine here).
+  "level": "L1" (an interest or activity outside work: sport, books, music, a cause, a community) |
+           "L2" (something they said or wrote that reveals how they think) |
+           "L3" (a telling career choice: a move, a switch, what they chose to build or leave) |
+           "L4" (roots: alma mater, hometown, the company's heritage they now carry) |
+           "L5" (a current moment: new role, first 100 days, milestone, award, talk) |
+           "L6" (what they protect: a legacy, their team, their customers' trust),
+  "text": one line a salesperson could open on, "source": source number}}]
+           // never family, health, religion, caste, politics, money, or private life; empty if nothing is sourced,
 "confidence": "high" if 3+ first-hand sources, "medium" if 1-2, "low" if none
 }}"""
     brief = llm.complete_json(SYSTEM, prompt, 4000)
@@ -305,6 +336,7 @@ Return {{
                          "voice_value": r.get("voice_value")} for i, r in enumerate(sources)]
     brief["samples_used"] = len(pasted)
     brief["personality"] = _clean_personality(brief.get("personality"), sources)
+    brief["openers"] = clean_openers(brief.get("openers"), len(sources))
     if not isinstance(brief.get("voice"), dict):
         brief["voice"] = {"samples": 0}
     if not pasted and not brief.get("first_hand"):

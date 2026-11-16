@@ -12,10 +12,18 @@ import { SheetContent } from "@/components/ui/dialog";
 import { Avatar } from "@/components/ui/misc";
 import { Samples, txt } from "@/components/BriefSheet";
 
-const MSGS: { k: string; label: string; limit?: number; hint: string }[] = [
-  { k: "connection_note", label: "Connection note", limit: 280, hint: "Sent with the invite. The hook, nothing to sell." },
-  { k: "message_1", label: "Message 1", limit: 500, hint: "After they accept: one sharp insight and a question they'd want to answer. No meeting ask." },
+const MSGS: { k: string; label: string; limit?: number; hint: string; later?: boolean }[] = [
+  { k: "connection_note", label: "1 · Connection note", limit: 280, hint: "Sent with the invite. About them, nothing to sell." },
+  { k: "message_1", label: "2 · Spark", limit: 500, hint: "After they accept: one observation in their world and a question. No seller name." },
+  { k: "mirror", label: "3 · Mirror & deepen", limit: 500, hint: "After their first real reply. Reuse their words.", later: true },
+  { k: "advice", label: "4 · Ask for advice", limit: 500, hint: "After they reply to 3. They teach, you learn.", later: true },
+  { k: "give", label: "5 · Give", limit: 500, hint: "One useful insight. Expertise shows, the company isn't named.", later: true },
+  { k: "reveal", label: "6 · Natural reveal", limit: 400, hint: "When they ask what you do, or after 5 lands. One line, then back to them.", later: true },
+  { k: "interest_check", label: "7 · Interest check", limit: 400, hint: "Ask for interest, not time.", later: true },
+  { k: "contact", label: "8 · Contact", limit: 400, hint: "After a yes or maybe: send something useful, ask for their email.", later: true },
+  { k: "specific_ask", label: "9 · Specific ask", limit: 400, hint: "After an email exchange: one day and time, 15 minutes.", later: true },
 ];
+const APPROACH_TONE: Record<string, any> = { pitch: "green", "warm only": "saffron", "do not pitch": "red" };
 
 export function PitchSheet({ person, onClose, onChanged }: { person: any; onClose: () => void; onChanged?: () => void }) {
   const pid = person?.person_id;
@@ -82,6 +90,30 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
                 ? <p className="rounded-md border border-dashed border-line px-3 py-2 text-[12.5px] text-muted">Their surname is hidden, so their posts can't be matched to them yet. Click <b>Get email</b> on their contact first, then paste their posts here and regenerate.</p>
                 : <Samples pid={pid} onChange={start} busy={!!busy} actionLabel="Regenerate pitch with these" startOpen />)}
 
+              {/* approach, best offering, opener used */}
+              {(d.approach?.decision || d.offering_rank?.length > 0 || d.openers?.length > 0) && (
+                <section className="grid gap-3 sm:grid-cols-2">
+                  {(d.approach?.decision || d.offering_rank?.length > 0) && (
+                    <div className="rounded-lg border border-line p-4 text-[13px]">
+                      <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">Approach</div>
+                      {d.approach?.decision && <div className="flex flex-wrap items-center gap-1.5"><Badge tone={APPROACH_TONE[d.approach.decision] || "gray"}>{d.approach.decision}</Badge>
+                        {d.approach.role_in_deal && <Badge tone="outline">{String(d.approach.role_in_deal).replace(/_/g, " ")}</Badge>}</div>}
+                      {d.approach?.reason && <p className="mt-1.5 text-muted">{d.approach.reason}</p>}
+                      {d.offering_rank?.length > 0 && <ul className="mt-2 space-y-1">{d.offering_rank.slice(0, 3).map((r: any) => (
+                        <li key={r.offering} className="flex items-center gap-2"><span className="flex-1 truncate">{r.offering}</span>
+                          <span className="h-1.5 w-16 rounded bg-line"><span className="block h-1.5 rounded bg-ink" style={{ width: `${r.score}%` }} /></span>
+                          <span className="w-8 text-right tabular-nums text-[12px]">{r.score}</span></li>))}</ul>}
+                    </div>
+                  )}
+                  {d.openers?.length > 0 && (
+                    <div className="rounded-lg border border-line p-4 text-[13px]">
+                      <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">About them (openers)</div>
+                      <ul className="space-y-1">{d.openers.map((o: any, i: number) => <li key={i}><Badge tone="outline">{o.level}</Badge> <span className="text-muted">{o.text}</span></li>)}</ul>
+                    </div>
+                  )}
+                </section>
+              )}
+
               {/* the hook */}
               <section className="rounded-lg border border-line p-4">
                 <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted"><Target className="size-3.5" />The hook</div>
@@ -146,15 +178,23 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
                     <Button size="xs" onClick={() => save("approved")} disabled={p.status === "approved"}><Check />{p.status === "approved" ? "Approved" : "Approve"}</Button>
                   </div>
                 </div>
+                {d.warmup?.length > 0 && (
+                  <div className="mb-3 rounded-md border border-dashed border-line px-3 py-2 text-[12.5px]">
+                    <b className="font-semibold">Before the invite</b>
+                    <ul className="mt-1 list-disc pl-4 text-muted">{d.warmup.map((w: string) => <li key={w}>{w}</li>)}</ul>
+                  </div>
+                )}
                 <div className="space-y-3">
-                  {MSGS.map((m) => {
+                  {MSGS.filter((m) => !m.later || draft[m.k] !== undefined).map((m, i, arr) => {
                     const v = draft[m.k] || ""; const over = m.limit && v.length > m.limit;
+                    const firstLater = m.later && !arr[i - 1]?.later;
                     return (
                       <div key={m.k}>
+                        {firstLater && <p className="mb-2 mt-4 border-t border-line-2 pt-3 text-[12px] text-muted">The rest of the conversation. Send these by hand as they reply, and adapt each one to what they actually said.</p>}
                         <div className="mb-1 flex items-center gap-2 text-[12px]"><b className="font-semibold">{m.label}</b><span className="text-faint">{m.hint}</span>
                           <span className={cn("ml-auto tabular-nums", over ? "font-semibold text-danger" : "text-faint")}>{v.length}{m.limit ? `/${m.limit}` : ""}</span>
                           <button onClick={() => copy(v)} className="text-faint hover:text-fg" aria-label={`Copy ${m.label}`}><Copy className="size-3.5" /></button></div>
-                        <Textarea rows={m.k === "connection_note" ? 3 : 5} value={v}
+                        <Textarea rows={m.k === "connection_note" ? 3 : m.later ? 3 : 5} value={v}
                           onChange={(e) => setDraft((x) => ({ ...x, [m.k]: e.target.value }))} className="text-[13px] leading-relaxed" />
                       </div>
                     );
@@ -167,7 +207,7 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
                 <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted"><Swords className="size-3.5" />How {person.full_name.split(" ")[0]} would react (simulated)</div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Reaction label="Invite" ok={sim.connection?.accept} yes="Accepts" no="Ignores" text={sim.connection?.reaction} />
-                  <Reaction label="Message 1" ok={sim.message_1?.reply} yes="Replies" no="No reply" text={sim.message_1?.reaction} />
+                  <Reaction label="Spark (message 2)" ok={sim.message_1?.reply} yes="Replies" no="No reply" text={sim.message_1?.reaction} />
                 </div>
                 {sim.scores && <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">{Object.entries(sim.scores).map(([k, v]: any) => (
                   <div key={k}><div className="text-[11px] capitalize text-muted">{k.replace(/_/g, " ")}</div><div className="mt-0.5 h-1.5 rounded bg-line"><div className="h-1.5 rounded bg-ink" style={{ width: `${(Number(v) || 0) * 10}%` }} /></div></div>))}</div>}

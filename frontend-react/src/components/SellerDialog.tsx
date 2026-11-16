@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { FileText, Globe, Loader2, RefreshCw, Sparkles, Trash2, Upload } from "lucide-react";
+import { FileText, Globe, Loader2, Megaphone, RefreshCw, Sparkles, Trash2, Upload } from "lucide-react";
 import { api, post } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 
-type Source = { id: number; name: string; kind: "deck" | "web"; url?: string; chars: number };
+type Source = { id: number; name: string; kind: "deck" | "web" | "pov"; url?: string; chars: number };
 
 const DEFAULT_TARGETS = "Moolya, moolya.com\nBugasura, bugasura.io";
 
@@ -16,7 +16,9 @@ export function SellerDialog({ open, onOpenChange, onSaved }: { open: boolean; o
   const [sources, setSources] = useState<Source[]>([]);
   const [targets, setTargets] = useState(DEFAULT_TARGETS);
   const [notes, setNotes] = useState("");
-  const [busy, setBusy] = useState<"" | "upload" | "web" | "build" | "rescore">("");
+  const [busy, setBusy] = useState<"" | "upload" | "web" | "build" | "rescore" | "pov">("");
+  const [povUrl, setPovUrl] = useState("");
+  const povRef = useRef<HTMLInputElement>(null);
   const [json, setJson] = useState<string | null>(null);
   const [rescore, setRescore] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -27,17 +29,30 @@ export function SellerDialog({ open, onOpenChange, onSaved }: { open: boolean; o
   };
   useEffect(() => { if (open) { load(); setJson(null); } }, [open]);
 
-  const upload = async (files: FileList | null) => {
+  const upload = async (files: FileList | null, kind: "deck" | "pov" = "deck") => {
     if (!files?.length) return;
-    setBusy("upload");
+    setBusy(kind === "pov" ? "pov" : "upload");
     const fd = new FormData();
     Array.from(files).forEach((f) => fd.append("files", f));
     try {
-      const body = await api<any>("/api/profile/sources", { method: "POST", body: fd });
+      const body = await api<any>(`/api/profile/sources?kind=${kind}`, { method: "POST", body: fd });
       toast.success(`Added ${body.added.length} file${body.added.length === 1 ? "" : "s"}`);
       body.errors?.forEach((e: string) => toast.error(e));
       await load();
-    } catch (e: any) { toast.error(e.message); } finally { setBusy(""); if (fileRef.current) fileRef.current.value = ""; }
+    } catch (e: any) { toast.error(e.message); } finally { setBusy(""); if (fileRef.current) fileRef.current.value = ""; if (povRef.current) povRef.current.value = ""; }
+  };
+
+  const addPovUrl = async () => {
+    if (!povUrl.trim()) return;
+    setBusy("pov");
+    try { await post("/api/profile/pov/url", { url: povUrl.trim() }); setPovUrl(""); await load(); toast.success("Page added"); }
+    catch (e: any) { toast.error(e.message); } finally { setBusy(""); }
+  };
+
+  const buildPov = async () => {
+    setBusy("pov");
+    try { const p = await post("/api/profile/pov"); setProfile(p); onSaved(); toast.success("Points of view updated. New pitches will use them."); }
+    catch (e: any) { toast.error(e.message); } finally { setBusy(""); }
   };
 
   const research = async () => {
@@ -74,7 +89,7 @@ export function SellerDialog({ open, onOpenChange, onSaved }: { open: boolean; o
   };
 
   const remove = async (id: number) => { await api(`/api/profile/sources/${id}`, { method: "DELETE" }); setSources((s) => s.filter((x) => x.id !== id)); };
-  const decks = sources.filter((s) => s.kind === "deck"), web = sources.filter((s) => s.kind === "web");
+  const decks = sources.filter((s) => s.kind === "deck"), web = sources.filter((s) => s.kind === "web"), pov = sources.filter((s) => s.kind === "pov");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -104,8 +119,26 @@ export function SellerDialog({ open, onOpenChange, onSaved }: { open: boolean; o
             <section className="rounded-lg border border-line bg-canvas p-3">
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional notes, e.g. focus on BFSI and OTT" />
               <Button className="mt-2 w-full" onClick={build} disabled={!!busy || !sources.length}>
-                {busy === "build" ? <Loader2 className="animate-spin" /> : <Sparkles />}Build profile from {sources.length} source{sources.length === 1 ? "" : "s"}
+                {busy === "build" ? <Loader2 className="animate-spin" /> : <Sparkles />}Build profile from {decks.length + web.length} source{decks.length + web.length === 1 ? "" : "s"}
               </Button>
+            </section>
+            <section>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">Leadership points of view</h3>
+                <Button size="sm" variant="outline" onClick={() => povRef.current?.click()} disabled={!!busy}>
+                  {busy === "pov" ? <Loader2 className="animate-spin" /> : <Upload />}Upload
+                </Button>
+                <input ref={povRef} type="file" multiple accept=".pdf,.pptx,.docx,.txt,.md" className="hidden" onChange={(e) => upload(e.target.files, "pov")} />
+              </div>
+              <p className="mb-2 text-[12px] text-muted">The CEO's or founder's decks, posts, talks and articles. Pitches frame their questions and insights through these views (never quoted).</p>
+              <div className="flex gap-1.5"><Input value={povUrl} onChange={(e) => setPovUrl(e.target.value)} placeholder="Or paste a link to a post or article" className="text-[12px]" />
+                <Button size="sm" variant="outline" onClick={addPovUrl} disabled={!!busy || !povUrl.trim()}><Globe />Add</Button></div>
+              <div className="mt-2"><SourceList items={pov} onRemove={remove} empty="No leadership material yet" /></div>
+              <Button size="sm" className="mt-2 w-full" onClick={buildPov} disabled={!!busy || !pov.length}><Megaphone />Build points of view from {pov.length} source{pov.length === 1 ? "" : "s"}</Button>
+              {profile?.pov?.angles?.length > 0 && (
+                <ul className="mt-2 space-y-1 text-[12px] text-muted">{profile.pov.angles.slice(0, 6).map((a: any, i: number) => <li key={i} className="border-l-2 border-saffron pl-2">{a.statement}</li>)}
+                  {profile.pov.angles.length > 6 && <li className="text-faint">+{profile.pov.angles.length - 6} more</li>}</ul>
+              )}
             </section>
           </div>
 
@@ -156,7 +189,7 @@ function SourceList({ items, onRemove, empty }: { items: Source[]; onRemove: (id
     <ul className="max-h-48 divide-y divide-line overflow-y-auto rounded-lg border border-line">
       {items.map((s) => (
         <li key={s.id} className="group flex items-center gap-2 px-2.5 py-1.5 text-[12.5px]">
-          {s.kind === "deck" ? <FileText className="size-3.5 shrink-0 text-muted" /> : <Globe className="size-3.5 shrink-0 text-muted" />}
+          {!s.url ? <FileText className="size-3.5 shrink-0 text-muted" /> : <Globe className="size-3.5 shrink-0 text-muted" />}
           {s.url ? <a href={s.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate hover:underline">{s.name}</a> : <span className="min-w-0 flex-1 truncate">{s.name}</span>}
           <span className="text-[11px] text-faint">{Math.round(s.chars / 1000)}k</span>
           <button aria-label="Remove" onClick={() => onRemove(s.id)} className="text-faint opacity-0 hover:text-danger group-hover:opacity-100"><Trash2 className="size-3.5" /></button>

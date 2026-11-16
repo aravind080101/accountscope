@@ -7,7 +7,7 @@ write + simulate pair per round, up to MAX_ROUNDS), and Apollo's per-contact rev
 from . import buyers, config, db, pitch
 
 TAVILY_CREDITS_PER_SEARCH = 2   # tavily.raw_search uses search_depth="advanced"
-PITCH_FIXED_AI_CALLS = 6        # triggers, strategize, hook writer, hook judge, explain, objections
+PITCH_FIXED_AI_CALLS = 7        # triggers, strategize, hook writer, hook judge, sequence, explain, objections
 BRIEF_AI_CALLS = 1
 
 

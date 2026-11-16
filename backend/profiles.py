@@ -226,8 +226,8 @@ def research_web(targets: list[dict]) -> list[dict]:
 def _material(limit: int = 90_000) -> str:
     docs = []
     with db.session() as s:
-        docs = [dict(r) for r in s.execute("SELECT name, kind, text FROM seller_doc WHERE workspace_id=? ORDER BY kind='web', added_at DESC",
-                                           (tenancy.current(),))]
+        docs = [dict(r) for r in s.execute("SELECT name, kind, text FROM seller_doc WHERE workspace_id=? AND kind!='pov' "
+                                           "ORDER BY kind='web', added_at DESC", (tenancy.current(),))]
     if not docs:
         return ""
     per = max(3000, limit // len(docs))  # decks first, each gets a fair share
@@ -268,7 +268,9 @@ List every distinct offering in the material, typically 4-12."""
     p["competitors"] = sorted(set(p.get("competitors") or []) | set(old.get("competitors") or []))
     if not p.get("offers"):
         p["offers"] = old.get("offers", [])
-    p["sources"] = [{"name": d["name"], "kind": d["kind"]} for d in list_sources()]
+    p["sources"] = [{"name": d["name"], "kind": d["kind"]} for d in list_sources() if d["kind"] != "pov"]
+    if old.get("pov"):
+        p["pov"] = old["pov"]   # leadership points of view are built separately (build_pov)
     return save(p)
 
 
@@ -356,3 +358,98 @@ def rescore_company(company_id: int) -> int:
             for p, (score, reason) in zip(projs, pf):
                 s.execute("UPDATE project SET fit_score=?, fit_reason=? WHERE id=?", (score, reason, p["id"]))
     return len(inits) + len(projs)
+
+
+# ------------------------------------------------- leadership points of view (Voice & POV library)
+
+
+POV_SYSTEM = """You turn a founder's or CEO's material (decks, posts, talks, articles) into an ANGLE BANK for outreach.
+Capture what they actually believe and how they frame it, in their terms. Only use what the material says; never
+invent opinions or quotes."""
+
+
+def build_pov() -> dict:
+    """Read every 'pov' document and store the angle bank in the profile as profile['pov']."""
+    with db.session() as s:
+        docs = [dict(r) for r in s.execute("SELECT name, text FROM seller_doc WHERE workspace_id=? AND kind='pov' ORDER BY added_at DESC",
+                                           (tenancy.current(),))]
+    if not docs:
+        raise ValueError("Add the CEO's decks, posts or talks first (Leadership POV uploads)")
+    per = max(4000, 80_000 // len(docs))
+    material = "\n\n".join(f"### {d['name']}\n{d['text'][:per]}" for d in docs)[:80_000]
+    out = llm.complete_json(POV_SYSTEM, f"""MATERIAL:
+{material}
+
+Return JSON {{"angles": [{{"statement": a belief or point of view in one sentence, "frame": a signature metaphor or framing or null,
+  "story": a short reusable anecdote or null, "topics": [...], "fits_initiatives": [kinds of initiatives it suits]}}],
+"voice": {{"tone": one line, "use": [phrases they use], "avoid": [phrases or tones they'd never use]}}}}
+Give 5-15 angles.""", 3000)
+    angles = [a for a in (out.get("angles") or []) if isinstance(a, dict) and a.get("statement")]
+    if not angles:
+        raise ValueError("No points of view found in that material")
+    profile = load()
+    profile["pov"] = {"angles": angles, "voice": out.get("voice") if isinstance(out.get("voice"), dict) else {},
+                      "sources": [d["name"] for d in docs]}
+    return save(profile)
+
+
+# ------------------------------------------------- which offering to pitch to a company
+
+
+RANK_SYSTEM = """You rank a seller's offerings for one target company. Judge the company's real work, not word overlap.
+Be strict and evidence-based: score each factor from 0 to 1 and cite the initiative or signal it rests on."""
+RANK_WEIGHTS = {"initiative_match": 35, "industry_match": 15, "proof_match": 15, "timing": 15, "size_fit": 10}
+RANK_BLOCKER = 10
+
+
+def rank_offerings(company_id: int, refresh: bool = False) -> list[dict]:
+    """Score 0-100 per offering (lead >= 75, secondary 60-74, below 60 don't pitch), cached for a day."""
+    from . import cache
+    key = f"offering_rank:{tenancy.of_company(company_id) or 1}:{company_id}"
+    if not refresh:
+        hit = cache.get(key, 24)
+        if hit is not None:
+            return hit
+    profile = load(tenancy.of_company(company_id))
+    with db.session() as s:
+        company = dict(s.execute("SELECT * FROM company WHERE id=?", (company_id,)).fetchone())
+        inits = [dict(r) for r in s.execute(
+            "SELECT name, stage, summary, fit_score, fit_reason FROM initiative WHERE company_id=? AND COALESCE(feedback,'')!='dismissed' "
+            "ORDER BY fit_score DESC LIMIT 15", (company_id,))]
+        vendors = [dict(r) for r in s.execute("SELECT name, relationship, area, is_competitor FROM vendor WHERE company_id=? LIMIT 12",
+                                              (company_id,))]
+    offerings = profile.get("offerings") or []
+    if not offerings:
+        return []
+    out = llm.complete_json(RANK_SYSTEM, f"""COMPANY: {company['name']} ({company.get('industry') or ''}, {company.get('hq_country') or ''})
+{company.get('summary') or ''}
+INITIATIVES: {json.dumps(inits)}
+VENDORS / PARTNERS: {json.dumps(vendors)}
+
+SELLER OFFERINGS:
+{_offerings_text(profile)}
+Seller proof points: {json.dumps(profile.get('proof') or [])}
+
+For EACH offering return {{"rank": [{{"offering": exact offering name, "initiative_match": 0-1, "industry_match": 0-1,
+"proof_match": 0-1 (a fitting proof point exists), "timing": 0-1 (fresh events make it urgent), "size_fit": 0-1,
+"blockers": 0-1 (incumbent vendor, big in-house team, freeze), "evidence": [initiative names or signals], "why": one line}}]}}""", 2500)
+    names = {o["name"] for o in offerings}
+    ranked = []
+    for r in out.get("rank") or []:
+        if not isinstance(r, dict) or r.get("offering") not in names:
+            continue
+
+        def f(k):
+            try:
+                return max(0.0, min(1.0, float(r.get(k) or 0)))
+            except (TypeError, ValueError):
+                return 0.0
+        score = round(sum(w * f(k) for k, w in RANK_WEIGHTS.items()) - RANK_BLOCKER * f("blockers"))
+        score = max(0, min(100, score))
+        ranked.append({"offering": r["offering"], "score": score,
+                       "label": "lead" if score >= 75 else "secondary" if score >= 60 else "don't pitch",
+                       "factors": {k: f(k) for k in [*RANK_WEIGHTS, "blockers"]},
+                       "evidence": [str(x) for x in (r.get("evidence") or [])][:4], "why": str(r.get("why") or "")})
+    ranked.sort(key=lambda x: x["score"], reverse=True)
+    cache.put(key, ranked)
+    return ranked
