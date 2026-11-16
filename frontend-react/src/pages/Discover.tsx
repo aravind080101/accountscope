@@ -24,9 +24,14 @@ export default function DiscoverPage({ refresh }: any) {
 
   const scan = async () => {
     setScanning(true); setPicked({});
-    try { setHits((await post<any>("/api/discover/signals", { preset: query ? null : preset, query, region, days })).companies); }
+    try {
+      if (mode === "decks") { const r = await post<any>("/api/discover/from-decks", { region, days }); setPlan(r.queries); setHits(r.companies); }
+      else setHits((await post<any>("/api/discover/signals", { preset: query ? null : preset, query, region, days })).companies);
+    }
     catch (e: any) { toast.error(e.message); } finally { setScanning(false); }
   };
+  const [plan, setPlan] = useState<string[] | null>(null);
+  useEffect(() => { setHits(null); setPlan(null); setPicked({}); }, [mode]);
   const doBrowse = async (p = 1) => {
     setSearching(true); setPage(p); setPicked({});
     try { setBrowse(await post("/api/discover/companies", { keywords: kw, location: loc, size, page: p })); }
@@ -44,10 +49,22 @@ export default function DiscoverPage({ refresh }: any) {
     <div className="flex h-full flex-col">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-6">
         <Compass className="size-4 text-muted" /><h1 className="text-[15px] font-semibold">Discover</h1>
-        <div className="ml-4"><Segmented value={mode} onChange={setMode} items={[["radar", "Signal radar"], ["browse", "Browse by filters"]]} /></div>
+        <div className="ml-4"><Segmented value={mode} onChange={setMode} items={[["radar", "Signal radar"], ["decks", "From your decks"], ["browse", "Browse by filters"]]} /></div>
       </header>
       <div className="flex-1 bg-canvas p-6 pb-24">
-        {mode === "radar" ? (<>
+        {mode !== "browse" ? (<>
+          {mode === "decks" ? (
+          <div className="rounded-lg border border-line bg-white p-4">
+            <Label>Companies that need what your decks sell</Label>
+            <p className="mb-3 text-[12.5px] text-muted">Reads your general decks and documents (What you sell), plans up to 3 buying-signal searches from them, and finds companies showing those signals now. For a campaign's own decks, use Campaigns.</p>
+            {plan && <div className="mb-3 flex flex-wrap gap-1.5">{plan.map((q) => <Badge key={q} tone="outline">{q}</Badge>)}</div>}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[1.4fr_140px_auto] md:items-end">
+              <div><Label>Regions</Label><LocationPicker value={region} onChange={setRegion} groups={opts?.locations} /></div>
+              <div><Label>News from the last</Label><Select value={days} onChange={(e) => setDays(+e.target.value)} className="w-full">{[7, 30, 90, 180].map((d) => <option key={d} value={d}>{d} days</option>)}</Select></div>
+              <Button onClick={scan} disabled={scanning}>{scanning ? <Loader2 className="animate-spin" /> : <Radar />}Find companies</Button>
+            </div>
+          </div>
+          ) : (
           <div className="rounded-lg border border-line bg-white p-4">
             <Label>What should the company be doing?</Label>
             <div className="mb-4 flex flex-wrap gap-1.5">
@@ -61,7 +78,7 @@ export default function DiscoverPage({ refresh }: any) {
               <div><Label>News from the last</Label><Select value={days} onChange={(e) => setDays(+e.target.value)} className="w-full">{[7, 30, 90].map((d) => <option key={d} value={d}>{d} days</option>)}</Select></div>
               <Button onClick={scan} disabled={scanning}>{scanning ? <Loader2 className="animate-spin" /> : <Radar />}Scan</Button>
             </div>
-          </div>
+          </div>)}
           <div className="mt-5">
             {scanning ? <div className="flex flex-col items-center gap-2 py-16 text-muted"><Loader2 className="size-5 animate-spin text-saffron" />Reading recent news and job posts…</div>
               : hits === null ? <Empty icon={<Radar />} title="Pick a signal and scan">You'll get real companies showing it right now, each with a one-line reason and its source.</Empty>

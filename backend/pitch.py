@@ -54,20 +54,24 @@ def _log(pid: int, msg: str) -> None:
         s.execute("UPDATE pitch SET log=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (json.dumps(log), pid))
 
 
-def create(person_id: int, kind: str | None = None, context_id: int | None = None) -> int:
+def create(person_id: int, kind: str | None = None, context_id: int | None = None, campaign_id: int | None = None) -> int:
+    """One pitch per person per campaign: a campaign pitch never replaces their general pitch, and vice versa."""
     with db.session() as s:
         if not s.execute("SELECT 1 FROM person WHERE id=?", (person_id,)).fetchone():
             raise LookupError("Person not found")
-        s.execute("DELETE FROM pitch WHERE person_id=? AND status IN ('ready','failed','running','queued')", (person_id,))
-        return s.execute("INSERT INTO pitch(person_id, context_kind, context_id, status, log) VALUES (?,?,?, 'queued', '[]')",
-                         (person_id, kind, context_id)).lastrowid
+        s.execute("DELETE FROM pitch WHERE person_id=? AND campaign_id IS ? AND status IN ('ready','failed','running','queued')",
+                  (person_id, campaign_id))
+        return s.execute("INSERT INTO pitch(person_id, context_kind, context_id, status, log, campaign_id) VALUES (?,?,?, 'queued', '[]', ?)",
+                         (person_id, kind, context_id, campaign_id)).lastrowid
 
 
 def get(pitch_id: int) -> dict | None:
     with db.session() as s:
         r = s.execute(
-            """SELECT pt.*, p.full_name, p.title, p.linkedin_url, p.email, p.email, c.name company, c.id company_id FROM pitch pt
-               JOIN person p ON p.id=pt.person_id JOIN company c ON c.id=p.company_id WHERE pt.id=?""", (pitch_id,)).fetchone()
+            """SELECT pt.*, p.full_name, p.title, p.linkedin_url, p.email, p.email, c.name company, c.id company_id,
+                      cp.name campaign FROM pitch pt
+               JOIN person p ON p.id=pt.person_id JOIN company c ON c.id=p.company_id
+               LEFT JOIN campaign cp ON cp.id=pt.campaign_id WHERE pt.id=?""", (pitch_id,)).fetchone()
     if not r:
         return None
     out = dict(r)
@@ -76,21 +80,29 @@ def get(pitch_id: int) -> dict | None:
     return out
 
 
-def latest_for_person(person_id: int) -> dict | None:
+def latest_for_person(person_id: int, campaign_id: int | None = None) -> dict | None:
     with db.session() as s:
-        r = s.execute("SELECT id FROM pitch WHERE person_id=? ORDER BY id DESC LIMIT 1", (person_id,)).fetchone()
+        r = s.execute("SELECT id FROM pitch WHERE person_id=? AND campaign_id IS ? ORDER BY id DESC LIMIT 1",
+                      (person_id, campaign_id)).fetchone()
     return get(r["id"]) if r else None
 
 
-def list_all(company_id: int | None = None, workspace_id: int | None = None) -> list[dict]:
+def list_all(company_id: int | None = None, workspace_id: int | None = None, campaign_id: int | None = None,
+             general_only: bool = False) -> list[dict]:
     q = """SELECT pt.id, pt.person_id, pt.status, pt.score, pt.updated_at, pt.data, p.full_name, p.title, p.linkedin_url, p.email,
-           EXISTS(SELECT 1 FROM buyer_brief b WHERE b.person_id=p.id) has_brief,
+           EXISTS(SELECT 1 FROM buyer_brief b WHERE b.person_id=p.id) has_brief, pt.campaign_id, cp.name campaign,
            c.name company, c.id company_id FROM pitch pt JOIN person p ON p.id=pt.person_id JOIN company c ON c.id=p.company_id
+           LEFT JOIN campaign cp ON cp.id=pt.campaign_id
            WHERE c.workspace_id=?"""
     args: tuple = (workspace_id or tenancy.current(),)
     if company_id:
         q += " AND c.id=?"
         args = args + (company_id,)
+    if campaign_id:
+        q += " AND pt.campaign_id=?"
+        args = args + (campaign_id,)
+    elif general_only:
+        q += " AND pt.campaign_id IS NULL"
     with db.session() as s:
         rows = db.rows(s.execute(q + " ORDER BY pt.updated_at DESC", args))
     for r in rows:
@@ -335,7 +347,9 @@ def _seller_block(profile: dict) -> str:
     offers = "\n".join(f"- {o['name']}: {o.get('what', '')} Suits: {o.get('for', '')}. Their effort: {o.get('effort_for_them', '')}"
                        for o in profile.get("offers", []))
     proof = "\n".join(f"- {x}" for x in profile.get("proof", []))
-    return f"""SELLER: {profile.get('company')}. {profile.get('description', '')}
+    camp = (f"\nCAMPAIGN: {profile['campaign']['name']}. Everything below is this campaign's focus; pitch only these offerings."
+            if profile.get("campaign") else "")
+    return f"""SELLER: {profile.get('company')}. {profile.get('description', '')}{camp}
 Offerings:
 {offs}
 Give-first offers (use ONLY these, by exact name):
@@ -769,7 +783,13 @@ def _run(pitch_id: int) -> None:
     try:
         if not llm.available():
             raise RuntimeError("Pitches need OPENAI_API_KEY or ANTHROPIC_API_KEY")
-        profile = profiles.load()
+        campaign_id = row.get("campaign_id")
+        if campaign_id:
+            from . import campaigns
+            profile = campaigns.profile_for(campaign_id)
+            _log(pitch_id, f"Campaign: {profile['campaign']['name']}. Using only this campaign's decks, offerings and proof")
+        else:
+            profile = profiles.load()
         ctx = context(row["person_id"], row.get("context_kind"), row.get("context_id"))
         brief = research(pitch_id, ctx["person"])
         _log(pitch_id, f"Context: {len(ctx['works'])} initiative(s)/project(s), {len(ctx['tech'])} tech, {len(ctx['vendors'])} vendors")
@@ -780,7 +800,8 @@ def _run(pitch_id: int) -> None:
             _log(pitch_id, f"Strongest trigger ({trig['triggers'][0].get('type')}): {trig['triggers'][0]['what']}")
 
         try:
-            ranked = profiles.rank_offerings(ctx["person"]["company_id"])
+            ranked = profiles.rank_offerings(ctx["person"]["company_id"], profile=profile if campaign_id else None,
+                                             campaign_id=campaign_id)
         except Exception:
             ranked = []
         if ranked:
@@ -789,7 +810,7 @@ def _run(pitch_id: int) -> None:
                          + [t.get("what", "") for t in trig.get("triggers", [])]
                          + [_txt(x) for k in ("priorities", "concerns") for x in (brief.get(k) or [])]
                          + ctx["tech"][:10] + [ctx["person"].get("industry") or ""])
-        material = profiles.relevant_material(query)
+        material = profiles.relevant_material(query, campaign_id=campaign_id)
         if material:
             profile = {**profile, "_material": material}
             _log(pitch_id, f"Found {len(material)} matching passage(s) in your decks: {', '.join(sorted({m['doc'] for m in material}))}")
@@ -914,16 +935,17 @@ def rerun(pitch_ids: list[int]) -> list[int]:
     """Write fresh pitches for the same people and context (e.g. after the rules changed). Returns new pitch ids."""
     with db.session() as s:
         rows = [dict(r) for r in s.execute(
-            f"SELECT id, person_id, context_kind, context_id FROM pitch WHERE id IN ({','.join('?' * len(pitch_ids))})",
+            f"SELECT id, person_id, context_kind, context_id, campaign_id FROM pitch WHERE id IN ({','.join('?' * len(pitch_ids))})",
             tuple(pitch_ids))] if pitch_ids else []
     seen, new_ids = set(), []
     for r in rows:
-        if r["person_id"] in seen:
+        key = (r["person_id"], r.get("campaign_id"))
+        if key in seen:
             continue
-        seen.add(r["person_id"])
-        with db.session() as s:   # the old pitch goes, whatever its status, so the list shows one per person
+        seen.add(key)
+        with db.session() as s:   # the old pitch goes, whatever its status, so the list shows one per person (per campaign)
             s.execute("DELETE FROM pitch WHERE id=?", (r["id"],))
-        new_ids.append(create(r["person_id"], r["context_kind"], r["context_id"]))
+        new_ids.append(create(r["person_id"], r["context_kind"], r["context_id"], r.get("campaign_id")))
     return new_ids
 
 
@@ -950,7 +972,7 @@ def dripify_csv(pitch_ids: list[int]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["LinkedIn URL", "First name", "Last name", "Company", "Title", "Email", "Connection note", "Message 1",
-                *[label for _, label, *_ in SEQUENCE], "Hook", "Offer after reply", "Approach", "Score"])
+                *[label for _, label, *_ in SEQUENCE], "Hook", "Offer after reply", "Approach", "Campaign", "Score"])
     for pid in pitch_ids:
         p = get(pid)
         if not p or p["status"] not in ("ready", "approved", "exported"):
@@ -960,7 +982,7 @@ def dripify_csv(pitch_ids: list[int]) -> str:
         w.writerow([p.get("linkedin_url") or "", parts[0], " ".join(parts[1:]), p["company"], p.get("title") or "", p.get("email") or "",
                     m.get("connection_note", ""), m.get("message_1", ""), *[m.get(k, "") for k in SEQUENCE_KEYS],
                     (p["data"].get("angle") or {}).get("hook", ""), (p["data"].get("angle") or {}).get("offer", ""),
-                    (p["data"].get("approach") or {}).get("decision", ""), p.get("score") or ""])
+                    (p["data"].get("approach") or {}).get("decision", ""), p.get("campaign") or "", p.get("score") or ""])
     with db.session() as s:
         s.executemany("UPDATE pitch SET status='exported' WHERE id=? AND status IN ('ready','approved')", [(i,) for i in pitch_ids])
     return buf.getvalue()

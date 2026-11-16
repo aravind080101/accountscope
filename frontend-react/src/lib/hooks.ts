@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 
-export type Route = { page: "accounts" | "company" | "discover" | "alerts" | "outreach" | "team" | "workspaces"; id?: number; tab?: string };
+export type Route = { page: "accounts" | "company" | "discover" | "alerts" | "outreach" | "team" | "workspaces" | "campaigns"; id?: number; tab?: string };
 
 function parse(): Route {
   const h = location.hash.replace(/^#\/?/, "");
   const [a, b, c] = h.split("/");
   if (a === "a" && b) return { page: "company", id: Number(b), tab: c || "initiatives" };
   if (a === "discover") return { page: "discover" };
+  if (a === "campaigns") return { page: "campaigns", id: b ? Number(b) : undefined };
   if (a === "alerts") return { page: "alerts" };
   if (a === "outreach") return { page: "outreach" };
   if (a === "team") return { page: "team" };

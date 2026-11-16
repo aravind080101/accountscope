@@ -34,7 +34,7 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
 
   const load = async (id?: number) => {
     try {
-      const x = id ? await api(`/api/pitches/${id}`) : await api(`/api/people/${pid}/pitch`);
+      const x = id ? await api(`/api/pitches/${id}`) : await api(`/api/people/${pid}/pitch${person.campaign_id ? `?campaign_id=${person.campaign_id}` : ""}`);
       setP(x); setNone(false); setDraft(x.data?.messages || {});
       clearTimeout(timer.current);
       if (x.status === "queued" || x.status === "running") timer.current = window.setTimeout(() => load(x.id), 1800);
@@ -45,7 +45,7 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
 
   const start = async () => {
     if (!(await confirmCost(`/api/people/${pid}/cost?action=pitch`, `Write a pitch for ${person.full_name}?`, "Write pitch"))) return;
-    try { const x = await post(`/api/people/${pid}/pitch`, { kind: person.context_kind, context_id: person.context_id }); setNone(false); load(x.id); }
+    try { const x = await post(`/api/people/${pid}/pitch`, { kind: person.context_kind, context_id: person.context_id, campaign_id: person.campaign_id || null }); setNone(false); load(x.id); }
     catch (e: any) { toast.error(e.message); }
   };
   const save = async (status?: string) => {
@@ -63,7 +63,7 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
       {person && (
         <SheetContent className="w-[min(760px,97vw)]"
           title={<span className="flex items-center gap-2.5"><Avatar name={person.full_name} size={28} />Pitch for {person.full_name}</span>}
-          description={[person.title, person.company].filter(Boolean).join(" · ")}>
+          description={[person.title, person.company, (p?.campaign || person.campaign) && `Campaign: ${p?.campaign || person.campaign}`].filter(Boolean).join(" · ")}>
           {none && (
             <div className="flex flex-col items-center gap-3 py-14 text-center">
               <Wand2 className="size-6 text-saffron" />

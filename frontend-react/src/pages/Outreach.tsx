@@ -10,12 +10,15 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, Checkbox, Empty, Tooltip } from "@/components/ui/misc";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { PitchSheet, ScorePill } from "@/components/PitchSheet";
+import { Select } from "@/components/ui/input";
 import { BriefSheet } from "@/components/BriefSheet";
 
 const FILTERS = [["all", "All"], ["ready", "Ready"], ["approved", "Approved"], ["exported", "Exported"], ["weak", "Needs work"]] as const;
 
 export default function OutreachPage() {
   const { data, reload } = useApi<any[]>("/api/pitches", [], (d) => d.some((p) => p.status === "queued" || p.status === "running"), 2500);
+  const campaignList = useApi<any[]>("/api/campaigns").data || [];
+  const [camp, setCamp] = useState<string>("all");   // all | general | <campaign id>
   const [f, setF] = useState<string>("all");
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [open, setOpen] = useState<any>(null);
@@ -27,7 +30,9 @@ export default function OutreachPage() {
     try { await post(`/api/people/${p.person_id}/enrich`); toast.success("Contact revealed"); reload(); }
     catch (e: any) { toast.error(e.message); } finally { setEnriching(null); }
   };
-  const rows = useMemo(() => (data || []).filter((p) => f === "all" || (f === "weak" ? (p.score ?? 0) < 7.5 && p.status !== "failed" : p.status === f)), [data, f]);
+  const rows = useMemo(() => (data || [])
+    .filter((p) => camp === "all" || (camp === "general" ? !p.campaign_id : String(p.campaign_id) === camp))
+    .filter((p) => f === "all" || (f === "weak" ? (p.score ?? 0) < 7.5 && p.status !== "failed" : p.status === f)), [data, f, camp]);
   const exportable = (data || []).filter((p) => sel.has(p.id) && ["ready", "approved", "exported"].includes(p.status));
   const missingUrl = exportable.filter((p) => !p.linkedin_url).length;
   const toggle = (id: number) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -56,6 +61,10 @@ export default function OutreachPage() {
         </div>
       </header>
       <div className="flex items-center gap-1.5 border-b border-line px-6 py-2.5">
+        <Select value={camp} onChange={(e) => setCamp(e.target.value)} className="mr-2 h-7 text-[12.5px]" aria-label="Campaign">
+          <option value="all">All outreach</option><option value="general">General (no campaign)</option>
+          {campaignList.map((c: any) => <option key={c.id} value={String(c.id)}>Campaign: {c.name}</option>)}
+        </Select>
         {FILTERS.map(([k, l]) => <button key={k} onClick={() => setF(k)} title={k === "weak" ? "Scored under 7.5/10 against the simulated buyer" : undefined} className={cn("h-7 shrink-0 whitespace-nowrap rounded-full border px-3 text-[12.5px]", f === k ? "border-ink bg-ink text-white" : "border-line bg-white text-muted hover:text-fg")}>{l}</button>)}
         <p className="ml-auto max-w-[520px] text-right text-[12px] text-faint">Select pitches and click Re-run to rewrite them with the latest rules. The CSV has all 9 messages per lead. In Dripify, map them to Custom Lead Fields and use them as variables.</p>
       </div>
@@ -71,10 +80,11 @@ export default function OutreachPage() {
               <tbody>{rows.map((p) => {
                 const busy = p.status === "queued" || p.status === "running";
                 return (
-                  <Tr key={p.id} className="cursor-pointer" onClick={() => setOpen({ person_id: p.person_id, pitch_id: p.id, full_name: p.full_name, title: p.title, company: p.company })}>
+                  <Tr key={p.id} className="cursor-pointer" onClick={() => setOpen({ person_id: p.person_id, pitch_id: p.id, full_name: p.full_name, title: p.title, company: p.company, campaign_id: p.campaign_id, campaign: p.campaign })}>
                     <Td className="pl-6" onClick={(e) => e.stopPropagation()}><Checkbox checked={sel.has(p.id)} onCheckedChange={() => toggle(p.id)} /></Td>
                     <Td><div className="flex items-center gap-2.5"><Avatar name={p.full_name} size={26} /><div className="min-w-0"><div className="font-medium">{p.full_name}</div>
                       <div className="truncate text-[12px] text-faint">{p.title} · {p.company}</div>
+                      {p.campaign && <Badge tone="violet" className="mt-0.5">Campaign: {p.campaign}</Badge>}
                       {(p.email || p.linkedin_url) && <div className="mt-0.5 flex items-center gap-3 text-[12px]" onClick={(e) => e.stopPropagation()}>
                         {p.email && <a className="inline-flex items-center gap-1 text-sponsor hover:underline" href={`mailto:${p.email}`}><Mail className="size-3" />{p.email}</a>}
                         {p.linkedin_url && <a className="inline-flex items-center gap-1 text-sponsor hover:underline" href={p.linkedin_url} target="_blank" rel="noreferrer"><ExternalLink className="size-3" />LinkedIn</a>}

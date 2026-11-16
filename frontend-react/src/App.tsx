@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Toaster, toast } from "sonner";
 import { CostConfirmHost } from "@/components/CostConfirm";
-import { Send, Bell, Building, Building2, ChevronsUpDown, Command as CmdIcon, Compass, KeyRound, Loader2, LogOut, Plus, Radar, Search, Settings2, Sparkles, Users } from "lucide-react";
+import { Bell, Building, Building2, ChevronsUpDown, Command as CmdIcon, Compass, KeyRound, Loader2, LogOut, Megaphone, Plus, Radar, Search, Send, Settings2, Sparkles, Users } from "lucide-react";
 import { api, post } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { go, useApi, useRoute } from "@/lib/hooks";
@@ -17,6 +17,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import DiscoverPage from "@/pages/Discover";
 import AlertsPage from "@/pages/Alerts";
 import OutreachPage from "@/pages/Outreach";
+import CampaignsPage from "@/pages/Campaigns";
 import TeamPage from "@/pages/Team";
 import WorkspacesPage from "@/pages/Workspaces";
 import { ForcePasswordPage, LoginPage, PasswordDialog, SetupPage, signOut } from "@/pages/Auth";
@@ -84,6 +85,7 @@ function Workspace({ me, onAuthChange, onSignOut }: { me: any; onAuthChange: () 
           {route.page === "discover" && <DiscoverPage {...ctx} />}
           {route.page === "alerts" && <AlertsPage {...ctx} />}
           {route.page === "outreach" && <OutreachPage />}
+          {route.page === "campaigns" && <CampaignsPage key={route.id || 0} id={route.id} {...ctx} />}
           {route.page === "team" && <TeamPage me={me} />}
           {route.page === "workspaces" && <WorkspacesPage me={me} onSwitched={onAuthChange} />}
           </ErrorBoundary>
@@ -122,6 +124,7 @@ function Sidebar({ route, accounts, unread, health, me, onCmd, onAdd, onSettings
   const nav = [
     { k: "accounts", label: "Accounts", icon: Building2, href: "/", count: accounts.length },
     { k: "discover", label: "Discover", icon: Compass, href: "/discover" },
+    { k: "campaigns", label: "Campaigns", icon: Megaphone, href: "/campaigns" },
     { k: "outreach", label: "Outreach", icon: Send, href: "/outreach" },
     { k: "alerts", label: "Alerts", icon: Bell, href: "/alerts", badge: unread },
   ];

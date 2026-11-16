@@ -216,6 +216,22 @@ CREATE TABLE IF NOT EXISTS seller_doc (
     text TEXT NOT NULL,
     added_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS campaign (
+    id INTEGER PRIMARY KEY,
+    workspace_id INTEGER NOT NULL DEFAULT 1,
+    name TEXT NOT NULL,
+    description TEXT,
+    profile TEXT,                               -- JSON built from this campaign's decks only
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS campaign_account (
+    campaign_id INTEGER NOT NULL REFERENCES campaign(id),
+    company_id INTEGER NOT NULL REFERENCES company(id),
+    signal TEXT,                                -- why it was picked for this campaign
+    source_url TEXT,
+    added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (campaign_id, company_id)
+);
 CREATE TABLE IF NOT EXISTS buyer_brief (
     person_id INTEGER PRIMARY KEY REFERENCES person(id),
     brief TEXT NOT NULL,                        -- JSON
@@ -460,7 +476,7 @@ def session():
 # Columns added after the first release; existing databases are upgraded in place.
 MIGRATIONS = {
     "company": [("watch", "INTEGER DEFAULT 0"), ("last_researched_at", "TEXT"), ("workspace_id", "INTEGER NOT NULL DEFAULT 1")],
-    "seller_doc": [("workspace_id", "INTEGER NOT NULL DEFAULT 1")],
+    "seller_doc": [("workspace_id", "INTEGER NOT NULL DEFAULT 1"), ("campaign_id", "INTEGER")],   # NULL = general library
     "feedback": [("workspace_id", "INTEGER NOT NULL DEFAULT 1")],
     "document": [("fetched_at", "TEXT")],
     "run": [("updated_at", "TEXT")],
@@ -469,6 +485,7 @@ MIGRATIONS = {
     "initiative": [("feedback", "TEXT"), ("basis", "TEXT")],
     "vendor": [("deal_type", "TEXT"), ("deal_value", "TEXT"), ("deal_date", "TEXT"), ("duration", "TEXT"), ("scope", "TEXT")],
     "initiative_contact": [("feedback", "TEXT"), ("source", "TEXT")],
+    "pitch": [("campaign_id", "INTEGER")],   # NULL = general outreach; else written from that campaign's decks only
 }
 
 

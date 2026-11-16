@@ -173,23 +173,24 @@ def read_file(filename: str, data: bytes) -> str:
     raise ValueError("Upload a PDF, PowerPoint (.pptx), Word (.docx) or text file. Save .ppt/.key decks as PDF first.")
 
 
-def add_source(name: str, kind: str, text: str, url: str | None = None) -> dict:
+def add_source(name: str, kind: str, text: str, url: str | None = None, campaign_id: int | None = None) -> dict:
+    """campaign_id None = the general library; otherwise the document belongs to that campaign only."""
     text = (text or "").strip()
     if len(text) < 50:
         raise ValueError(f"Couldn't read any text from {name}. If it's a scanned or image-only deck, export it with text.")
     with db.session() as s:
         wid = tenancy.current()
-        s.execute("DELETE FROM seller_doc WHERE workspace_id=? AND name=? AND kind=?", (wid, name, kind))
-        cur = s.execute("INSERT INTO seller_doc(workspace_id, name, kind, url, text) VALUES (?,?,?,?,?)",
-                        (wid, name, kind, url, text[:200_000]))
-        return {"id": cur.lastrowid, "name": name, "kind": kind, "chars": len(text)}
+        s.execute("DELETE FROM seller_doc WHERE workspace_id=? AND name=? AND kind=? AND campaign_id IS ?", (wid, name, kind, campaign_id))
+        cur = s.execute("INSERT INTO seller_doc(workspace_id, name, kind, url, text, campaign_id) VALUES (?,?,?,?,?,?)",
+                        (wid, name, kind, url, text[:200_000], campaign_id))
+        return {"id": cur.lastrowid, "name": name, "kind": kind, "chars": len(text), "campaign_id": campaign_id}
 
 
 def list_sources() -> list[dict]:
     with db.session() as s:
         return [dict(r) for r in s.execute(
-            "SELECT id, name, kind, url, LENGTH(text) chars, added_at FROM seller_doc WHERE workspace_id=? ORDER BY kind, added_at DESC",
-            (tenancy.current(),))]
+            "SELECT id, name, kind, url, LENGTH(text) chars, added_at FROM seller_doc WHERE workspace_id=? AND campaign_id IS NULL "
+            "ORDER BY kind, added_at DESC", (tenancy.current(),))]
 
 
 def delete_source(sid: int) -> None:
@@ -227,7 +228,7 @@ def _material(limit: int = 90_000) -> str:
     docs = []
     with db.session() as s:
         docs = [dict(r) for r in s.execute("SELECT name, kind, text FROM seller_doc WHERE workspace_id=? AND kind!='pov' "
-                                           "ORDER BY kind='web', added_at DESC", (tenancy.current(),))]
+                                           "AND campaign_id IS NULL ORDER BY kind='web', added_at DESC", (tenancy.current(),))]
     if not docs:
         return ""
     per = max(3000, limit // len(docs))  # decks first, each gets a fair share
@@ -371,7 +372,7 @@ invent opinions or quotes."""
 def build_pov() -> dict:
     """Read every 'pov' document and store the angle bank in the profile as profile['pov']."""
     with db.session() as s:
-        docs = [dict(r) for r in s.execute("SELECT name, text FROM seller_doc WHERE workspace_id=? AND kind='pov' ORDER BY added_at DESC",
+        docs = [dict(r) for r in s.execute("SELECT name, text FROM seller_doc WHERE workspace_id=? AND kind='pov' AND campaign_id IS NULL ORDER BY added_at DESC",
                                            (tenancy.current(),))]
     if not docs:
         raise ValueError("Add the CEO's decks, posts or talks first (Leadership POV uploads)")
@@ -402,15 +403,16 @@ RANK_WEIGHTS = {"initiative_match": 35, "industry_match": 15, "proof_match": 15,
 RANK_BLOCKER = 10
 
 
-def rank_offerings(company_id: int, refresh: bool = False) -> list[dict]:
-    """Score 0-100 per offering (lead >= 75, secondary 60-74, below 60 don't pitch), cached for a day."""
+def rank_offerings(company_id: int, refresh: bool = False, profile: dict | None = None, campaign_id: int | None = None) -> list[dict]:
+    """Score 0-100 per offering (lead >= 75, secondary 60-74, below 60 don't pitch), cached for a day.
+    With a campaign, the campaign's own offerings are ranked (pass its profile)."""
     from . import cache
-    key = f"offering_rank:{tenancy.of_company(company_id) or 1}:{company_id}"
+    key = f"offering_rank:{tenancy.of_company(company_id) or 1}:{company_id}:{campaign_id or 0}"
     if not refresh:
         hit = cache.get(key, 24)
         if hit is not None:
             return hit
-    profile = load(tenancy.of_company(company_id))
+    profile = profile or load(tenancy.of_company(company_id))
     with db.session() as s:
         company = dict(s.execute("SELECT * FROM company WHERE id=?", (company_id,)).fetchone())
         inits = [dict(r) for r in s.execute(
@@ -467,14 +469,14 @@ def _words(text: str) -> list[str]:
     return [w for w in _re.findall(r"[a-z][a-z0-9+.-]{2,}", (text or "").lower()) if w not in _STOP]
 
 
-def relevant_material(query: str, k: int = 4, min_hits: int = 3) -> list[dict]:
+def relevant_material(query: str, k: int = 4, min_hits: int = 3, campaign_id: int | None = None) -> list[dict]:
     """Passages from your decks and web pages (not leadership POV) that match the query, best first.
     Free and local: chunks scored by shared rare words. A passage needs min_hits distinct matching words to count,
     so nothing is returned when the decks don't speak to this person's needs."""
     import math
     with db.session() as s:
-        docs = [dict(r) for r in s.execute("SELECT name, kind, text FROM seller_doc WHERE workspace_id=? AND kind!='pov'",
-                                           (tenancy.current(),))]
+        docs = [dict(r) for r in s.execute("SELECT name, kind, text FROM seller_doc WHERE workspace_id=? AND kind!='pov' "
+                                           "AND campaign_id IS ?", (tenancy.current(), campaign_id))]
     chunks = []
     for d in docs:
         text = " ".join((d["text"] or "").split())

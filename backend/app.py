@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import alerts, auth, buyers, config, costs, db, discover, feedback, guard, llm, orgchart, pipeline, pitch, profiles, projects, tenancy
+from . import alerts, auth, buyers, campaigns, config, costs, db, discover, feedback, guard, llm, orgchart, pipeline, pitch, profiles, projects, tenancy
 from .providers import apollo
 from .taxonomy import CATEGORIES
 
@@ -705,6 +705,7 @@ def project_feedback(pid: int, body: dict):
 class PitchIn(BaseModel):
     kind: str | None = None        # initiative | project
     context_id: int | None = None
+    campaign_id: int | None = None  # write it from this campaign's decks only
 
 
 @app.post("/api/people/{pid}/pitch")
@@ -712,8 +713,10 @@ def make_pitch(pid: int, body: PitchIn, background: BackgroundTasks):
     guard.person(pid)
     if not llm.available():
         raise HTTPException(400, "Pitches need OPENAI_API_KEY or ANTHROPIC_API_KEY")
+    if body.campaign_id and not campaigns.owns(body.campaign_id):
+        raise HTTPException(404, "Campaign not found")
     try:
-        ptid = pitch.create(pid, body.kind, body.context_id)
+        ptid = pitch.create(pid, body.kind, body.context_id, body.campaign_id)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     background.add_task(pitch.run, ptid)
@@ -721,19 +724,20 @@ def make_pitch(pid: int, body: PitchIn, background: BackgroundTasks):
 
 
 @app.get("/api/people/{pid}/pitch")
-def person_pitch(pid: int):
+def person_pitch(pid: int, campaign_id: int | None = None):
     guard.person(pid)
-    p = pitch.latest_for_person(pid)
+    p = pitch.latest_for_person(pid, campaign_id)
     if not p:
         raise HTTPException(404, "No pitch yet")
     return p
 
 
 @app.get("/api/pitches")
-def pitches(company_id: int | None = None):
+def pitches(company_id: int | None = None, campaign_id: int | None = None, general: bool = False):
+    """campaign_id: only that campaign's pitches. general=true: only pitches written outside any campaign."""
     if company_id:
         guard.company(company_id)
-    return pitch.list_all(company_id, tenancy.current())
+    return pitch.list_all(company_id, tenancy.current(), campaign_id, general)
 
 
 @app.get("/api/pitches/{ptid}")
@@ -843,6 +847,192 @@ def rerun_pitches(body: RerunIn, background: BackgroundTasks):
     new_ids = pitch.rerun(id_list)
     background.add_task(pitch.run_queue, new_ids)
     return {"queued": len(new_ids), "pitch_ids": new_ids}
+
+
+# ------------------------------------------------------------------ campaigns
+
+
+class CampaignIn(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class CampaignUrlIn(BaseModel):
+    url: str
+
+
+class FindIn(BaseModel):
+    region: str | list[str] | None = None
+    days: int = 30
+    signals: list[str] | None = None
+
+
+class CampaignCompany(BaseModel):
+    name: str
+    domain: str | None = None
+    signal: str | None = None
+    source_url: str | None = None
+
+
+class CampaignAccountsIn(BaseModel):
+    companies: list[CampaignCompany] = []
+    company_ids: list[int] = []      # accounts you already have
+
+
+def _campaign(cid: int) -> dict:
+    try:
+        return campaigns.get(cid)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.get("/api/campaigns")
+def list_campaigns():
+    return campaigns.list_all()
+
+
+@app.post("/api/campaigns")
+def create_campaign(body: CampaignIn):
+    try:
+        return campaigns.create(body.name or "", body.description or "")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/campaigns/{cid}")
+def get_campaign(cid: int):
+    return _campaign(cid)
+
+
+@app.put("/api/campaigns/{cid}")
+def edit_campaign(cid: int, body: CampaignIn):
+    _campaign(cid)
+    return campaigns.rename(cid, body.name, body.description)
+
+
+@app.delete("/api/campaigns/{cid}")
+def delete_campaign(cid: int):
+    _campaign(cid)
+    campaigns.delete(cid)
+    return {"deleted": cid}
+
+
+@app.post("/api/campaigns/{cid}/sources")
+async def campaign_sources(cid: int, files: list[UploadFile] = File(...)):
+    _campaign(cid)
+    added, errors = [], []
+    for f in files:
+        try:
+            added.append(profiles.add_source(f.filename, "deck", profiles.read_file(f.filename, await f.read()), campaign_id=cid))
+        except Exception as exc:
+            errors.append(f"{f.filename}: {exc}")
+    if not added and errors:
+        raise HTTPException(400, "; ".join(errors))
+    return {"added": added, "errors": errors}
+
+
+@app.post("/api/campaigns/{cid}/sources/url")
+def campaign_source_url(cid: int, body: CampaignUrlIn):
+    _campaign(cid)
+    if not config.TAVILY_API_KEY:
+        raise HTTPException(400, "Reading a page needs TAVILY_API_KEY")
+    from .providers import tavily
+    try:
+        page = tavily.extract(body.url)
+        return profiles.add_source(body.url, "web", page["text"][:60_000], body.url, campaign_id=cid)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(400, f"Couldn't read that page: {config.redact(str(exc))}") from exc
+
+
+@app.delete("/api/campaigns/{cid}/sources/{sid}")
+def campaign_remove_source(cid: int, sid: int):
+    _campaign(cid)
+    campaigns.remove_source(cid, sid)
+    return _campaign(cid)
+
+
+@app.post("/api/campaigns/{cid}/profile")
+def campaign_build_profile(cid: int):
+    _campaign(cid)
+    if not llm.available():
+        raise HTTPException(400, "Building a campaign profile needs an AI key")
+    try:
+        return campaigns.build_profile(cid)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/campaigns/{cid}/find")
+def campaign_find(cid: int, body: FindIn):
+    """Companies showing a buying signal for what this campaign's decks sell."""
+    _campaign(cid)
+    _require_keys()
+    try:
+        return campaigns.find_companies(cid, body.region, max(1, min(body.days, 365)), body.signals)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/discover/from-decks")
+def discover_from_decks(body: FindIn):
+    """Companies showing a buying signal for what your general decks sell."""
+    _require_keys()
+    try:
+        return campaigns.find_companies(None, body.region, max(1, min(body.days, 365)), body.signals)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/campaigns/{cid}/accounts")
+def campaign_add_accounts(cid: int, body: CampaignAccountsIn, tasks: BackgroundTasks):
+    """Put companies in the campaign; new ones are researched one after another."""
+    _campaign(cid)
+    jobs = []
+    for c in body.companies:
+        if not c.name.strip():
+            continue
+        company_id = _upsert_company(c.name, c.domain)
+        campaigns.link(cid, company_id, c.signal, c.source_url)
+        if not campaigns.researched(company_id) and not db.active_run(company_id):
+            jobs.append((_queue_run(company_id), company_id))
+    for company_id in body.company_ids:
+        guard.company(company_id)
+        campaigns.link(cid, company_id)
+    if jobs:
+        _require_keys()
+
+        def run_all():
+            with pipeline.keep_alive([rid for rid, _ in jobs]):
+                for run_id, company_id in jobs:
+                    pipeline.run(run_id, company_id)
+        tasks.add_task(run_all)
+    return {"linked": len(body.companies) + len(body.company_ids), "researching": len(jobs), "campaign": _campaign(cid)}
+
+
+@app.delete("/api/campaigns/{cid}/accounts/{company_id}")
+def campaign_remove_account(cid: int, company_id: int):
+    _campaign(cid)
+    campaigns.unlink(cid, company_id)
+    return _campaign(cid)
+
+
+@app.post("/api/campaigns/{cid}/accounts/{company_id}/pitches")
+def campaign_pitch_account(cid: int, company_id: int, body: BulkPitchIn, background: BackgroundTasks):
+    """Write this campaign's outreach to the best contacts at one of its companies."""
+    camp = _campaign(cid)
+    guard.company(company_id)
+    if not llm.available():
+        raise HTTPException(400, "Pitches need OPENAI_API_KEY or ANTHROPIC_API_KEY")
+    if not camp["profile"]:
+        raise HTTPException(400, "Build the campaign profile from its decks first")
+    people = pitch.top_contacts(company_id, max(1, min(body.limit, 25)), body.min_fit)
+    if not people:
+        raise HTTPException(400, "No contacts on strong-fit initiatives yet. Wait for research to finish, or lower the fit bar.")
+    ids = [pitch.create(p, campaign_id=cid) for p in people]
+    background.add_task(pitch.run_queue, ids)
+    return {"queued": len(ids), "pitch_ids": ids}
 
 
 @app.get("/api/pitches.csv")
