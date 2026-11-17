@@ -18,8 +18,8 @@ def test_first_two_messages_cannot_sell():
     brief = {"openers": [{"level": "L3", "text": "Left RBL to lead a bank founded in 1904", "source": 0}]}
     note = "Hi Vijay, going from RBL to a bank founded in 1904 is a rare move. What drew you to it?"
     ok = {"connection_note": note,
-          "message_1": "Moving customers to new net banking is where payees go missing. At Moolya we test migrations like this "
-                       "on real accounts before cutover. Happy to do 15 minutes if useful?"}
+          "message_1": "A bank founded in 1904 moving customers to new net banking is where payees go missing. At Moolya we test "
+                       "migrations like this on real accounts before cutover. Happy to do 15 minutes if useful?"}
     assert pitch.lint(ok, None, "Moolya", brief, profile) == []          # one plain 'who we are' + a soft open door is fine
     bad = {"connection_note": "Hi Vijay, quick note about QA.",
            "message_1": "Moolya's Migration Assurance is trusted by 50,000+ engineers. Moolya can help. Can we book a call Tuesday?"}
@@ -197,3 +197,33 @@ def test_conversation_must_lead_to_a_named_use_case():
     assert any("not one of the seller's offerings" in i for i in pitch.lint_goal({**goal, "offering": "Game testing"}, seq, profile))
     vague = dict(seq, full_pitch="We help teams. 15 minutes Thursday?")
     assert any("Full pitch" in i for i in pitch.lint_goal(goal, vague, profile))
+
+def test_interest_hook_wins_and_message_1_keeps_the_personal_thread():
+    brief = {"openers": [{"level": "L1", "text": "Runs the Chennai marathon every year", "source": 0},
+                         {"level": "L3", "text": "Left RBL to lead a bank founded in 1904", "source": 1}],
+             "personality": {"interests": [{"text": "Chennai marathon", "source": 0}]}}
+    work_note = {"connection_note": "Hi Vijay, leading a bank founded in 1904 into mobile banking is a rare brief. What drew you?",
+                 "message_1": "Thanks Vijay. We test banking apps on real devices. Happy to do 15 minutes if useful."}
+    issues = pitch.lint(work_note, None, "Moolya", brief, {"company": "Moolya", "offerings": []})
+    assert any("interest or hobby" in i for i in issues)          # has a hobby on file, so open on it
+    assert any("dropped the personal thread" in i for i in issues)  # Message 1 went straight to the product
+    good = {"connection_note": "Hi Vijay, saw you run the Chennai marathon every year. Is pacing the hard part or the training?",
+            "message_1": "Thanks Vijay. The marathon point stuck with me: the last 5k is about pacing. Releases are similar; "
+                         "we test banking apps on real devices before go-live. Happy to do 15 minutes if useful."}
+    assert not [i for i in pitch.lint(good, None, "Moolya", brief, {"company": "Moolya", "offerings": []})
+                if "interest" in i or "personal thread" in i]
+
+
+def test_hooks_rank_an_interest_above_a_company_line(monkeypatch):
+    brief = {"openers": [{"level": "L1", "text": "Runs the Chennai marathon every year", "source": 0}],
+             "personality": {"interests": [{"text": "Chennai marathon", "source": 0}]}}
+    ctx = {"person": {"full_name": "Vijay Anandh", "company": "City Union Bank", "title": "CEO"}, "works": [], "tech": [], "vendors": []}
+
+    def fake(system, prompt, *a, **k):
+        if "HOOK WRITER" in system:
+            return {"hooks": [{"style": "timing", "line": "Hi Vijay, CUB's new mobile app launch this quarter is a big moment."},
+                              {"style": "interest", "line": "Hi Vijay, the Chennai marathon every year is a serious habit."}]}
+        return {"verdicts": [{"n": 0, "stop": 9}, {"n": 1, "stop": 6}]}
+    monkeypatch.setattr(pitch.llm, "complete_json", fake)
+    got = pitch.hooks(ctx, brief, {}, {"triggers": []})
+    assert "marathon" in got[0]["line"] and got[0]["uses_interest"]

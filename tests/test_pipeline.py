@@ -76,7 +76,9 @@ def connected(monkeypatch):
     monkeypatch.setattr(apollo, "search_people", lambda domain, titles, per_page=10: [dict(p) for p in PEOPLE])
     from backend.providers import webtech
     monkeypatch.setattr(webtech, "fetch", lambda domain: None)
-    monkeypatch.setattr(apollo, "enrich", lambda aid, name, domain: {"email": "arao@bank.test", "phone": None, "linkedin_url": None})
+    monkeypatch.setattr(apollo, "enrich", lambda aid, name, domain, *a, **k: {"email": "arao@bank.test", "phone": None, "linkedin_url": None})
+    import backend.app as _app
+    monkeypatch.setattr(_app, "find_linkedin", lambda name, company: None)   # no web search in tests
 
 
 def test_requires_keys(monkeypatch):

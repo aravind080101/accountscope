@@ -667,30 +667,62 @@ def run_status(rid: int):
 # ------------------------------------------------------------------ contacts
 
 
+def find_linkedin(full_name: str, company: str) -> str | None:
+    """A public LinkedIn profile URL for this person, from a web search (free). Only a /in/ page whose title has their name."""
+    if not config.TAVILY_API_KEY or not full_name or "*" in full_name:
+        return None
+    from .providers import tavily
+    try:
+        results = tavily.raw_search(f'"{full_name}" {company} LinkedIn', max_results=6, include_domains=["linkedin.com"])
+    except Exception:
+        return None
+    names = [w.lower() for w in full_name.split() if len(w) > 1]
+    for r in results:
+        url, title = (r.get("url") or ""), (r.get("title") or "").lower()
+        if "linkedin.com/in/" in url and all(n in title for n in names[:2]):
+            return url.split("?")[0]
+    return None
+
+
 def _enrich_person(pid: int) -> dict:
     with db.session() as s:
-        row = s.execute("SELECT p.*, c.domain FROM person p JOIN company c ON c.id=p.company_id WHERE p.id=?", (pid,)).fetchone()
+        row = s.execute("SELECT p.*, c.domain, c.name company FROM person p JOIN company c ON c.id=p.company_id WHERE p.id=?", (pid,)).fetchone()
     if not row:
         raise HTTPException(404, "This person is no longer in the database. Reload the page.")
     p = dict(row)
-    if not apollo.available():
-        raise HTTPException(400, "Enrichment needs APOLLO_API_KEY")
-    try:
-        data = apollo.enrich(p.get("apollo_id"), p["full_name"], p.get("domain"))
-    except Exception as exc:
-        raise HTTPException(502, f"Apollo enrichment failed: {exc}") from exc
+    data, apollo_error = {}, None
+    if apollo.available():
+        try:
+            data = apollo.enrich(p.get("apollo_id"), p["full_name"], p.get("domain"), p.get("company"))
+        except Exception as exc:
+            apollo_error = config.redact(str(exc))
+    else:
+        apollo_error = "APOLLO_API_KEY not set"
+    full = (data.get("full_name") or "").strip()
+    name = full if full and "*" not in full else p["full_name"]
+    li_source = "apollo" if data.get("linkedin_url") else None
+    if not data.get("linkedin_url") and not p.get("linkedin_url"):
+        url = find_linkedin(name, p.get("company") or "")
+        if url:
+            data["linkedin_url"], li_source = url, "web search"
     with db.session() as s:
         s.execute(
             "UPDATE person SET email=COALESCE(?, email), phone=COALESCE(?, phone), linkedin_url=COALESCE(?, linkedin_url) WHERE id=?",
             (data.get("email"), data.get("phone"), data.get("linkedin_url"), p["id"]),
         )
-        full = (data.get("full_name") or "").strip()
         if full and "*" in p["full_name"] and "*" not in full:  # Apollo reveals the hidden surname
             clash = s.execute("SELECT 1 FROM person WHERE company_id=? AND full_name=? AND id!=?",
                               (p["company_id"], full, p["id"])).fetchone()
             if not clash:
                 s.execute("UPDATE person SET full_name=? WHERE id=?", (full, p["id"]))
-    return {"email": data.get("email"), "phone": data.get("phone"), "linkedin_url": data.get("linkedin_url")}
+        cur = dict(s.execute("SELECT email, phone, linkedin_url FROM person WHERE id=?", (p["id"],)).fetchone())
+    if not cur.get("email") and not cur.get("linkedin_url"):
+        raise HTTPException(404 if not apollo_error else 502,
+                            f"No email or LinkedIn found for {name}" + (f" (Apollo: {apollo_error})" if apollo_error else
+                            ": Apollo has no match and the web search found no profile."))
+    found = [k for k in ("email", "linkedin_url") if data.get(k)]
+    missing = [k for k in ("email", "linkedin_url") if not cur.get(k)]
+    return {**cur, "found": found, "missing": missing, "linkedin_source": li_source, "apollo_error": apollo_error}
 
 
 @app.post("/api/people/{pid}/enrich")

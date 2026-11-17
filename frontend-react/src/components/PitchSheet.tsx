@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as D from "@radix-ui/react-dialog";
 import { toast } from "sonner";
 import { Check, ChevronDown, Copy, Crosshair, FileText, Flame, Lightbulb, Loader2, MessageSquareQuote, RefreshCw, ShieldAlert, Swords, Target, Wand2, Mail, ExternalLink } from "lucide-react";
-import { api, post } from "@/lib/api";
+import { api, post, reportEnrich } from "@/lib/api";
 import { confirmCost } from "@/components/CostConfirm";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,7 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
   const getEmail = async () => {
     if (!(await confirmCost(`/api/people/${pid}/cost?action=enrich`, `Get ${person.full_name}'s email and LinkedIn?`, "Get email"))) return;
     setEnriching(true);
-    try { await post(`/api/people/${pid}/enrich`); toast.success("Contact revealed"); await load(p?.id); onChanged?.(); }
+    try { const r = await post<any>(`/api/people/${pid}/enrich`); reportEnrich(r); await load(p?.id); onChanged?.(); }
     catch (e: any) { toast.error(e.message); } finally { setEnriching(false); }
   };
   const busy = p && (p.status === "queued" || p.status === "running");

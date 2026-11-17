@@ -252,8 +252,9 @@ HOOK_STYLES = {
 }
 
 HOOK_WRITER = """You are the HOOK WRITER. Write opening lines for a LinkedIn connection note. Each must be about THIS
-person (an interest, a career choice, their roots, a current moment, their own words, a go-live they own) and name
-something specific to them within the first 12 words. Create curiosity, not alarm: never open on a failure scenario
+person as a person (an interest or hobby, a career choice, their roots, a current moment, their own words) and name
+something specific to them within the first 12 words. Interests and hobbies (L1) come first: if OPENERS or INTERESTS
+has one, the "interest" hook must use it. Never open on their company's product, app, rollout or project. Create curiosity, not alarm: never open on a failure scenario
 or a risk at their company. No pitch, no seller name, no stats, no compliment, no greeting beyond "Hi <name>,".
 If a style needs an OPENER level that isn't available, use the strongest opener there is instead. Never invent
 interests or facts. Under 160 characters each. One hook per style."""
@@ -297,10 +298,15 @@ Return {{"verdicts": [{{"n": number, "stop": 1-10 (how likely you open it), "rea
                 continue
     except Exception:
         pass
+    personal, interest = _personal_terms(brief), _interest_terms(brief)
     for h in cands:
         h["stop"] = h.get("stop", 0.0)
         h["generic"] = bool(bland_line(h["line"], ctx, brief))
-    cands.sort(key=lambda h: (not h["generic"], h["stop"]), reverse=True)
+        low = h["line"].lower()
+        h["personal"] = bool(personal) and any(t in low for t in personal)
+        h["uses_interest"] = bool(interest) and any(t in low for t in interest)
+    # a hook about them as a person beats one about their company, and an interest/hobby beats everything else
+    cands.sort(key=lambda h: (not h["generic"], h["uses_interest"], h["personal"], h["stop"]), reverse=True)
     return cands
 
 
@@ -574,8 +580,10 @@ WRITER = f"""You are the WRITER of LinkedIn outreach for a B2B seller. Rules:
   world (e.g. OTT: playback, devices, live events, DRM) as it touches their work; Message 2 and the full pitch go
   deeper into it. If a CAMPAIGN is named in the seller block, its context frames every later message.
 - The connection note asks for nothing, does not pitch and does not name the seller.
-- Message 1 (1 day after they accept), 60-90 words: their world (one specific observation about their product,
-  rollout or role) + who we are (one plain first-person line: "we test playback on real Smart TVs...", never
+- Message 1 (1 day after they accept), 60-90 words: FIRST one line that picks up the personal thread from the note
+  (their interest, hobby, words or moment, e.g. "Still thinking about your marathon point: the last 5k is about
+  pacing, not speed."), THEN their world (one specific observation about their product, rollout or role, ideally
+  bridged from that personal line) + who we are (one plain first-person line: "we test playback on real Smart TVs...", never
   "Company X provides...") + an open door to a 15-minute call, phrased softly ("happy to do 15 minutes if useful"),
   never a booked slot or calendar link. One clear point, one clear ask.
 - No service menus, no list of capabilities, no stats or client counts ("50,000+ engineers", "25 countries").
@@ -645,9 +653,23 @@ def bland_line(line: str, ctx: dict, brief: dict | None = None) -> str | None:
     return None
 
 
+_STOP = {"their", "about", "which", "where", "there", "these", "joined", "years", "company", "current", "role", "with", "from",
+         "your", "being", "other", "after", "before", "while", "would", "could", "should", "every", "since", "under", "people"}
+
+
+def _interest_terms(brief: dict | None) -> set[str]:
+    """Distinctive words from their interests and hobbies (L1 openers and personality interests)."""
+    words = set()
+    texts = [o.get("text", "") for o in (brief or {}).get("openers") or [] if o.get("level") == "L1"]
+    texts += [str(x.get("text", "") if isinstance(x, dict) else x) for x in ((brief or {}).get("personality") or {}).get("interests") or []]
+    for t in texts:
+        words |= set(re.findall(r"[a-z][a-z0-9+-]{4,}", t.lower()))
+    return words - _STOP
+
+
 def _personal_terms(brief: dict | None) -> set[str]:
     """Distinctive words from the person's openers and interests: the note must use at least one."""
-    stop = {"their", "about", "which", "where", "there", "these", "joined", "years", "company", "current", "role", "with", "from"}
+    stop = _STOP
     words = set()
     for o in (brief or {}).get("openers") or []:
         words |= {w for w in re.findall(r"[a-z][a-z0-9+-]{4,}", o.get("text", "").lower())}
@@ -670,6 +692,13 @@ def lint(msgs: dict, ctx: dict | None = None, seller: str = "", brief: dict | No
     if seller and m1.lower().count(seller.lower()) > 1:
         issues.append(f"Name {seller} at most once in Message 1 (one plain line on who we are).")
     personal = _personal_terms(brief)
+    interest = _interest_terms(brief)
+    if interest and note and any(t in note.lower() for t in personal) and not any(t in note.lower() for t in interest):
+        issues.append("They have a sourced interest or hobby (OPENERS L1 / INTERESTS): open the connection note on it, "
+                      "not on their work.")
+    if personal and m1 and not any(t in m1.lower() for t in personal):
+        issues.append("Message 1 dropped the personal thread: open it with one line that picks up the hook from the "
+                      "connection note (their interest, words or moment), then move to their world.")
     if personal and note and not any(t in note.lower() for t in personal):
         issues.append("The connection note has no personal hook. Open on one of their OPENERS or interests.")
     for name in _offering_names(profile):
@@ -1021,6 +1050,10 @@ def _run(pitch_id: int) -> None:
         if not brief.get("first_hand"):
             warnings.append("Nothing first-hand from this person was found, so the hook rests on their company's work and the tone is a "
                             "neutral default. Paste a few things they wrote or said (LinkedIn posts, comments, talk quotes) in the box below, then regenerate.")
+        if not _interest_terms(brief) and "*" not in ctx["person"]["full_name"]:
+            warnings.append(f"No interests or hobbies were found for {ctx['person']['full_name']} on the public web, so the hook uses "
+                            + ("their career or current moment." if brief.get("openers") else "their work.")
+                            + " Paste their LinkedIn About section or a personal post (Brief → paste), then Re-run.")
         approach = strat.get("approach") or {}
         if approach.get("decision") == "do not pitch":
             warnings.append(f"Approach: don't pitch this person ({approach.get('reason') or 'poor fit'}). Pick someone else at this account.")

@@ -124,7 +124,7 @@ def test_group_companies_and_job_only_work_are_not_projects(monkeypatch):
 def test_get_email_works_after_research_again(monkeypatch):
     install_fakes(monkeypatch)
     from backend.providers import apollo
-    monkeypatch.setattr(apollo, "enrich", lambda apollo_id, name, domain: {"email": "x@zen.test", "full_name": None})
+    monkeypatch.setattr(apollo, "enrich", lambda apollo_id, name, domain, *a, **k: {"email": "x@zen.test", "full_name": None})
     cid = client.post("/api/accounts", json={"name": "Zen Finance Email", "domain": "zen.test"}).json()["company_id"]
     c = client.get(f"/api/accounts/{cid}").json()["initiatives"][0]["contacts"][-1]
     client.post(f"/api/accounts/{cid}/refresh")                 # contact rows are rebuilt; the page may still hold old ids
@@ -211,7 +211,7 @@ def test_pitch_agent_loops_until_the_buyer_would_reply(monkeypatch):
     assert len(d["rounds"]) == 2 and d["rounds"][0]["lint"]                 # round 1 failed the length and phrase rules
     assert d["messages"]["connection_note"].startswith("Hi Ravi, moving loan states")
     assert p["score"] == 8 and d["objections"][0]["objection"] == "We have in-house QA"
-    assert not d["warnings"]
+    assert not [w for w in d["warnings"] if "No interests or hobbies" not in w]   # Ravi has no hobby on file
     assert d["hooks"][0]["style"] == "sharp_question" and d["hooks"][-1]["generic"]   # bland hook loses despite a high score
     assert d["triggers"][0]["type"] == "commitment" and d["why"]["still_open"][0]["refute"] == "SI already owns testing"
     assert seen["seq"] == 2 and d["messages"]["full_pitch"].endswith("Thursday work?") and not d["sequence_issues"]   # rewritten until clean

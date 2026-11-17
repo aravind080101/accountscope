@@ -59,6 +59,8 @@ def install_fakes(monkeypatch):
     monkeypatch.setattr(config, "TAVILY_API_KEY", "x")
     from backend import people as _people   # the leadership check searches the web; tests stub it
     monkeypatch.setattr(_people, "verify_leadership", lambda *a, **k: {"current": [], "former": [], "changed": 0})
+    import backend.app as _app
+    monkeypatch.setattr(_app, "find_linkedin", lambda name, company: None)   # no web search in tests
     monkeypatch.setattr(config, "APOLLO_API_KEY", "x")
     monkeypatch.setattr(config, "COMPETITORS_TEST", True, raising=False)
 

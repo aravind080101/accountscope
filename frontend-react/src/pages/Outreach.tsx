@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Download, ExternalLink, Loader2, Mail, RefreshCw, Send, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
-import { post } from "@/lib/api";
+import { post, reportEnrich } from "@/lib/api";
 import { confirmCost } from "@/components/CostConfirm";
 import { useApi } from "@/lib/hooks";
 import { cn, day } from "@/lib/utils";
@@ -27,7 +27,7 @@ export default function OutreachPage() {
   const enrich = async (p: any) => {
     if (!(await confirmCost(`/api/people/${p.person_id}/cost?action=enrich`, `Get ${p.full_name}'s email?`, "Get email"))) return;
     setEnriching(p.person_id);
-    try { await post(`/api/people/${p.person_id}/enrich`); toast.success("Contact revealed"); reload(); }
+    try { const r = await post<any>(`/api/people/${p.person_id}/enrich`); reportEnrich(r); reload(); }
     catch (e: any) { toast.error(e.message); } finally { setEnriching(null); }
   };
   const rows = useMemo(() => (data || [])
@@ -98,7 +98,7 @@ export default function OutreachPage() {
                     <Td className="text-muted tabular-nums">{day(p.updated_at)}</Td>
                     <Td className="pr-6" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-0.5">
-                        {!p.email && <Tooltip content="Get email and LinkedIn (1 Apollo credit)"><span>
+                        {(!p.email || !p.linkedin_url) && <Tooltip content={!p.email ? "Get email and LinkedIn (1 Apollo credit)" : "Find their LinkedIn profile"}><span>
                           <Button variant="ghost" size="icon-sm" aria-label={`Get email for ${p.full_name}`} disabled={enriching === p.person_id} onClick={() => enrich(p)}>
                             {enriching === p.person_id ? <Loader2 className="animate-spin" /> : <Mail />}</Button></span></Tooltip>}
                         <Tooltip content={p.has_brief ? "View buyer brief" : "Build a buyer brief"}><span>

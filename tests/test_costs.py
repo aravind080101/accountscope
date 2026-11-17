@@ -36,7 +36,7 @@ def test_cost_estimates():
 
     # a saved, fresh brief means no search credits
     with db.session() as s:
-        s.execute("INSERT INTO buyer_brief(person_id, brief, sources) VALUES (?,?,?)", (a, json.dumps({"summary": "x", "samples_used": 0, "personality": {}}), "[]"))
+        s.execute("INSERT INTO buyer_brief(person_id, brief, sources) VALUES (?,?,?)", (a, json.dumps({"summary": "x", "samples_used": 0, "personality": {}, "openers": []}), "[]"))
     p2 = c.get(f"/api/people/{a}/cost?action=pitch", headers=H).json()
     assert not any(l["service"] == "Tavily" for l in p2["lines"]) and any("Reuses" in n for n in p2["notes"])
 

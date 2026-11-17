@@ -140,23 +140,36 @@ def search_companies(keywords: list[str], locations: list[str], sizes: list[str]
             "total": pag.get("total_entries")}
 
 
-def enrich(apollo_id: str | None, full_name: str, domain: str | None) -> dict:
-    """Reveal email (and phone when available). Costs Apollo credits."""
+def _real_email(e: str | None) -> str | None:
+    """Apollo returns placeholders such as email_not_unlocked@domain.com for locked emails."""
+    if not e or "not_unlocked" in e or e.endswith("@domain.com"):
+        return None
+    return e
+
+
+def enrich(apollo_id: str | None, full_name: str, domain: str | None, company: str | None = None) -> dict:
+    """Reveal email (and phone when available). Costs Apollo credits. Tries the Apollo id first, then name + company."""
     if not available():
         return {}
-    body: dict = {"reveal_personal_emails": False}
+    tries = []
     if apollo_id:
-        body["id"] = apollo_id
-    else:
-        body.update(name=full_name, domain=domain)
-    resp = httpx.post(f"{BASE}/people/match", json=body, headers=_headers(), timeout=30)
-    resp.raise_for_status()
-    p = resp.json().get("person") or {}
-    phones = p.get("phone_numbers") or []
-    return {
-        "email": p.get("email"),
-        "phone": phones[0].get("sanitized_number") if phones else None,
-        "linkedin_url": p.get("linkedin_url"),
-        "title": p.get("title"),
-        "full_name": p.get("name"),
-    }
+        tries.append({"id": apollo_id})
+    parts = (full_name or "").split()
+    by_name = {"name": full_name, "first_name": parts[0] if parts else None, "last_name": " ".join(parts[1:]) or None}
+    if domain:
+        by_name["domain"] = domain
+    if company:
+        by_name["organization_name"] = company
+    tries.append(by_name)
+    best: dict = {}
+    for body in tries:
+        resp = httpx.post(f"{BASE}/people/match", json={"reveal_personal_emails": False, **body}, headers=_headers(), timeout=30)
+        resp.raise_for_status()
+        p = resp.json().get("person") or {}
+        phones = p.get("phone_numbers") or []
+        got = {"email": _real_email(p.get("email")), "phone": phones[0].get("sanitized_number") if phones else None,
+               "linkedin_url": p.get("linkedin_url"), "title": p.get("title"), "full_name": p.get("name")}
+        best = {k: best.get(k) or got.get(k) for k in got}
+        if best.get("email") and best.get("linkedin_url"):
+            break
+    return best

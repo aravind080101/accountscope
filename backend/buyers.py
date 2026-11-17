@@ -95,8 +95,11 @@ SOURCE_FAMILIES = [
         "include_domains": ["medium.com", "substack.com", "dev.to", "hashnode.dev", "hackernoon.com", "linkedin.com",
                             "slideshare.net", "speakerdeck.com", "quora.com", "x.com", "twitter.com", "github.com"]}),
     ("news", "quoted", '"{name}" said OR says', {"topic": "news", "days": 730}),
-    # person signals for the connection note: interests, causes, roots, milestones
-    ("interests", "bio", '"{name}" marathon OR hobby OR "outside work" OR alumni OR volunteer OR mentor OR award OR book', {}),
+    # person signals for the connection note: interests and hobbies first, then causes, roots, milestones
+    ("interests", "bio", '"{name}" hobby OR passion OR "outside work" OR "free time" OR weekends OR "when not"', {}),
+    ("interests", "bio", '"{name}" marathon OR runner OR cycling OR trek OR cricket OR golf OR chess OR yoga OR fitness', {}),
+    ("interests", "bio", '"{name}" author OR book OR music OR photography OR travel OR poetry OR painting OR cooking', {}),
+    ("interests", "bio", '"{name}" volunteer OR mentor OR NGO OR foundation OR TEDx OR alumni OR trustee OR award', {}),
 ]
 
 
@@ -183,7 +186,8 @@ def needs_rebuild(person_id: int, force: bool = False) -> bool:
     existing = get(person_id)
     return bool(force or not existing or not _fresh(existing["created_at"])
                 or existing.get("samples_used", 0) != len(samples(person_id))
-                or "personality" not in existing)  # built before personality reading existed
+                or "personality" not in existing      # built before personality reading existed
+                or "openers" not in existing)         # built before personal hooks existed
 
 
 def gather(name: str, company: str, title: str, domain: str | None = None) -> list[dict]:
@@ -194,7 +198,8 @@ def gather(name: str, company: str, title: str, domain: str | None = None) -> li
     marks = {a.lower() for a in aliases} | {a.lower().split()[0] for a in aliases}
     if domain:
         marks.add(domain.split(".")[0].lower())
-    trusted = ("linkedin.com", "youtube.com", "podcasts.apple.com", "open.spotify.com", "x.com", "twitter.com", "medium.com")
+    trusted = ("linkedin.com", "youtube.com", "podcasts.apple.com", "open.spotify.com", "x.com", "twitter.com", "medium.com",
+               "ted.com", "goodreads.com", "strava.com")
     seen, out = set(), []
     for fam, voice, q, opts in queries:
         try:
@@ -213,7 +218,10 @@ def gather(name: str, company: str, title: str, domain: str | None = None) -> li
             out.append({**r, "family": fam, "voice_value": voice})
     order = {"unscripted": 0, "written": 1, "bio": 2, "quoted": 3}  # most telling first, within the cap
     out.sort(key=lambda r: order.get(r["voice_value"], 9))
-    return out[:14]
+    # keep room for the pages that show who they are outside work, so hobbies aren't crowded out by talks and news
+    personal = [r for r in out if r["family"] == "interests"][:4]
+    rest = [r for r in out if r not in personal]
+    return (rest[:14 - len(personal)] + personal)[:14]
 
 
 # ------------------------------------------------------------ pasted samples
@@ -315,8 +323,11 @@ Return {{
 {trait_guide}
   }},
   "values": [{{"text": something they repeatedly care about (mentoring, quality, customers...), "source": n}}],
-  "interests": [{{"text": an interest or activity outside work (sport, books, music, a cause, a community, alumni group);
-                 any source may show it, including bios and event pages, "source": n}}],
+  "interests": [{{"text": an interest, hobby or activity outside work: sport, fitness, books they read or wrote, music,
+                 photography, travel, food, art, a cause, volunteering, mentoring, a community, alumni group, a language
+                 they love, a city they're proud of. Read EVERY source for these, including bios, LinkedIn About,
+                 Volunteering and Honors sections, event pages, podcasts where they talk about themselves. Be specific
+                 ("ran the Mumbai marathon 2025", not "likes sports"), "source": n}}],
   "summary": one sentence on their personality at work, only from the traits you could read,
   "how_to_write": [2-4 rules that follow from their personality, e.g. "challenge an assumption, they like debate"]
 }},
