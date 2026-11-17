@@ -185,21 +185,19 @@ def test_pitch_agent_loops_until_the_buyer_would_reply(monkeypatch):
         if "CONVERSATION WRITER" in system:
             assert "connection_note: Hi Ravi, moving loan states" in prompt     # continues the winning thread
             seen["seq"] = seen.get("seq", 0) + 1
-            if seen["seq"] == 1:   # first draft names the seller too early and asks for time: must be rewritten
-                return {"warmup": ["Follow Ravi"], "mirror": "Moolya can help. Can we do a 20 minute call?", "advice": "", "give": "x",
-                        "reveal": "x", "interest_check": "x", "contact": "x", "specific_ask": "x"}
-            assert "BROKE THESE RULES" in prompt and "before stage 6" in prompt
+            if seen["seq"] == 1:   # first draft says 'just checking in' and has no ask: must be rewritten
+                return {"message_2": "Just checking in on my note.", "full_pitch": ""}
+            assert "BROKE THESE RULES" in prompt
             return {"end_goal": {"offering": OFFERING, "use_case": "Cutover testing for the CoreSoft loan migration",
                                  "outcome": "no loan schedules break at go-live", "deliverable": "cutover checklist",
                                  "ask": "15 minutes on the cutover plan"},
-                    "warmup": ["Follow Ravi", "Comment on the CoreSoft go-live post"],
-                    "mirror": "That makes sense. Mid-cycle loans are where the old and new cores disagree. Which product line worries you most?",
-                    "advice": "You've run two core moves before. What would you do differently on this one?",
-                    "give": "One pattern I keep seeing: totals reconcile but per-loan schedules drift after backdated changes. Useful?",
-                    "reveal": "Fair question. I work on testing at Zen QA, mostly migrations like this. How is your team splitting the cutover tests?",
-                    "interest_check": "Worth comparing notes on how you're approaching the cutover?",
-                    "contact": "I have a one-page cutover checklist that reads better as a PDF. What's the best email to send it to?",
-                    "specific_ask": "Would 15 minutes on Thursday at 4pm work to walk through the cutover against your plan?"}
+                    "warmup": ["View Ravi's profile", "Like his CoreSoft go-live post"],
+                    "message_2": "One pattern in loan cutovers: totals reconcile but per-loan schedules drift after backdated "
+                                 "changes. One idea: replay last month's backdated changes on CoreSoft before go-live. "
+                                 "Worth 15 minutes next week to walk through it?",
+                    "full_pitch": "Glad it was useful. We are a testing team that does a lot of core migrations. For the CoreSoft "
+                                  "loan cutover we would replay backdated changes, reconcile every loan schedule and rehearse "
+                                  "the cutover weekend. Happy to send the cutover checklist. Would 15 minutes on Thursday work?"}
         if "OBJECTIONS" in system:
             return {"objections": [{"objection": "We have in-house QA", "likelihood": "high",
                                     "responses": [{"label": "Complement", "reply": "Makes sense..."}]}]}
@@ -216,8 +214,8 @@ def test_pitch_agent_loops_until_the_buyer_would_reply(monkeypatch):
     assert not d["warnings"]
     assert d["hooks"][0]["style"] == "sharp_question" and d["hooks"][-1]["generic"]   # bland hook loses despite a high score
     assert d["triggers"][0]["type"] == "commitment" and d["why"]["still_open"][0]["refute"] == "SI already owns testing"
-    assert seen["seq"] == 2 and d["messages"]["contact"].endswith("send it to?") and not d["sequence_issues"]   # stages 3-9 rewritten until clean
-    assert d["warmup"] == ["Follow Ravi", "Comment on the CoreSoft go-live post"]
+    assert seen["seq"] == 2 and d["messages"]["full_pitch"].endswith("Thursday work?") and not d["sequence_issues"]   # rewritten until clean
+    assert d["warmup"] == ["View Ravi's profile", "Like his CoreSoft go-live post"]
     assert d["end_goal"]["use_case"].startswith("Cutover testing")
 
     edited = client.put(f"/api/pitches/{p['id']}", json={"messages": {"message_1": "Edited.", "message_3": "ignored"}, "status": "approved"}).json()

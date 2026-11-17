@@ -364,9 +364,10 @@ def rescore_company(company_id: int) -> int:
 # ------------------------------------------------- leadership points of view (Voice & POV library)
 
 
-POV_SYSTEM = """You turn a founder's or CEO's material (decks, posts, talks, articles) into an ANGLE BANK for outreach.
-Capture what they actually believe and how they frame it, in their terms. Only use what the material says; never
-invent opinions or quotes."""
+POV_SYSTEM = """You turn the seller's own thinking (their books, DeepTest pages, blogs, leadership posts and talks)
+into an ANGLE BANK for outreach. Capture two things: HOW they frame testing problems (their lens, recurring ideas,
+signature metaphors) and WHAT substance they offer (principles, practices, examples a buyer would find useful).
+Only use what the material says; never invent opinions, numbers or quotes."""
 
 
 def build_pov() -> dict:
@@ -382,9 +383,11 @@ def build_pov() -> dict:
 {material}
 
 Return JSON {{"angles": [{{"statement": a belief or point of view in one sentence, "frame": a signature metaphor or framing or null,
-  "story": a short reusable anecdote or null, "topics": [...], "fits_initiatives": [kinds of initiatives it suits]}}],
+  "idea": one concrete practice or insight from the material a buyer could use (paraphrased) or null,
+  "story": a short reusable anecdote or null, "topics": [...], "fits_initiatives": [kinds of initiatives it suits],
+  "source": which document it came from}}],
 "voice": {{"tone": one line, "use": [phrases they use], "avoid": [phrases or tones they'd never use]}}}}
-Give 5-15 angles.""", 3000)
+Give 8-20 angles, spread across the documents.""", 3500)
     angles = [a for a in (out.get("angles") or []) if isinstance(a, dict) and a.get("statement")]
     if not angles:
         raise ValueError("No points of view found in that material")

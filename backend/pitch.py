@@ -15,8 +15,8 @@ Agents, in order (each logs a step the UI shows):
      simulator     message, scores it and says what would make them ignore or refute it.
   5. Loop        - the writer revises from that critique until the simulated buyer would accept and
                    reply (score >= PASS_SCORE), switching to the next angle if one keeps failing.
-  6. Sequence    - stages 3-9 of the conversation (mirror, advice, give, natural reveal, interest check,
-                   contact, specific ask) plus warm-up actions. The seller is never named before stage 6.
+  6. Sequence    - Message 2 (useful insight + one idea + specific 15-minute ask; last automated Dripify step) and
+                   the full pitch (sent by hand when they reply), plus day-1 warm-up actions.
   7. Objections  - likely push-backs ("we have in-house QA", "send a deck") with ready replies.
 
 Nothing is sent automatically. Pitches are reviewed, edited and exported as a CSV for Dripify.
@@ -31,9 +31,11 @@ PASS_SCORE = 7.5
 MAX_ROUNDS = 4
 LIMITS = {
     "connection_note": int(os.getenv("CONNECTION_NOTE_MAX", "280")),  # LinkedIn: 300 with Premium, 200 on free accounts
-    "message_1": 500,
+    "message_1": 600,   # 60-90 words
 }
-# First touches never ask for time. The goal is a reply, not a meeting.
+# Message 1 may hold the door open to a 15-minute call once ("happy to do 15 minutes if useful"); it never books a slot.
+OPEN_DOOR = re.compile(r"\b15[\s-]*min(ute)?s?\b", re.I)
+# The connection note never asks for time.
 TIME_ASK = re.compile(r"\b\d+\s*-?\s*min(ute)?s?\b|\b(call|meeting|demo|calendar|calendly|schedule|slot|hop on|jump on|catch up|"
                       r"chat this week|book a|set up a time|free next week|available (this|next) week)\b", re.I)
 BANNED = ["hope this finds you", "i came across your profile", "i'd love to connect", "synergy", "leverage", "cutting-edge",
@@ -128,26 +130,20 @@ def update_messages(pitch_id: int, messages: dict, status: str | None = None) ->
 MESSAGE_KEYS = ["connection_note", "message_1"]
 # Stages 3-9 are written once the opener passes the simulated buyer. Sent by hand as the conversation moves;
 # stage 3 onward should be adapted to their actual reply before sending.
+# The Dripify plan: 1 connection note (day 2, with the invite, after a profile view and a post like),
+# 2 Message 1 (1 day after they accept), 3 Message 2 (5 days later, only if no reply; last automated step,
+# the sequence stops on reply), then the full pitch, sent by hand when they reply with interest.
 SEQUENCE = [  # key, label, when to send, character limit, rule for the writer
-    ("mirror", "3 · Mirror & deepen", "After their first real reply", 500,
-     "Pick up their point (write it as if they agreed with Message 1's observation), add one small insight from their "
-     "background, and ask one follow-up question. No seller name."),
-    ("advice", "4 · Ask for advice", "After they reply to 3", 500,
-     "Ask for their expert view, rooted in their career or what they've said. They teach, you learn. No seller name."),
-    ("give", "5 · Give", "After they reply to 4", 500,
-     "One useful, specific insight from the seller's experience phrased as 'I keep seeing...'. Prefer a learning from "
-     "FROM YOUR DECKS that fits their need, else a proof point's learning; never a client name or number. Expertise "
-     "visible, seller NOT named. May end with 'useful?'."),
-    ("reveal", "6 · Natural reveal", "When they ask what you do, or after 5 lands", 400,
-     "One plain line on what the sender does, naming the seller once and the fitting offering in everyday words, "
-     "then hand the conversation back with a question about their situation."),
-    ("interest_check", "7 · Interest check", "After 6", 400,
-     "Ask for interest, not time: e.g. 'Worth comparing notes on how you're approaching X?'. No call, no minutes."),
-    ("contact", "8 · Contact", "After a yes or maybe", 400,
-     "Offer something useful that reads better as a PDF: the give-first offer, or the deck/case study from FROM YOUR "
-     "DECKS that matches their need (by topic, not file name). Ask for the best email. Email only."),
-    ("specific_ask", "9 · Specific ask", "After an email exchange", 400,
-     "One specific day and time for 15 minutes, tied to the pain they named. No deck."),
+    ("message_2", "3 · Message 2", "5 days after Message 1, only if no reply (last automated step)", 700,
+     "Same thread, deeper into the campaign context. One USEFUL insight about their exact situation (from MOOLYA "
+     "THINKING or FROM YOUR DECKS, paraphrased, no client names or numbers), then ONE concrete idea for them (a "
+     "specific test pass, check or walkthrough for their use case), then a specific 15-minute ask tied to that idea "
+     "(e.g. 'Worth 15 minutes next week to walk through it?'). 60-100 words. Never 'just checking in'."),
+    ("full_pitch", "Full pitch", "By hand, when they reply with interest, ask what you do, or say 'tell me more'", 1400,
+     "Answer as a person, not a brochure. Open on what they said (write it as a natural reply). Then: who we are in "
+     "one line, the use case at THEIR company (END GOAL), how we'd approach it (2-3 concrete steps), one proof point "
+     "that fits (only from the list), the offer or deliverable, and a specific next step with a 15-minute slot. "
+     "Short paragraphs, no bullet lists, 120-200 words."),
 ]
 SEQUENCE_KEYS = [k for k, *_ in SEQUENCE]
 SEQUENCE_LIMITS = {k: lim for k, _, _, lim, _ in SEQUENCE}
@@ -366,8 +362,8 @@ def _material_block(profile: dict) -> str:
     body = "\n".join(f"[{m['doc']}] {m['text'][:700]}" for m in mat)
     return f"""
 FROM YOUR DECKS AND DOCUMENTS (passages that match this person's current work). Use them ONLY where they genuinely
-fit what this person needs now; ignore any that don't. Before stage 6 use them as learnings or observations, never
-naming the seller, a client or a number. From stage 6, the matching deck or case study can be offered by its topic
+fit what this person needs now; ignore any that don't. In the connection note and Message 1 use them only as
+observations, never naming a client or a number. In Message 2 and the full pitch, the matching deck or case study can be offered by its topic
 (e.g. "a short case study on a core banking cutover"). Never invent anything the passages don't say.
 {body}"""
 
@@ -376,15 +372,17 @@ def _pov_block(profile: dict) -> str:
     """The founder/CEO's points of view, used as the thinking behind the messages, never quoted as theirs."""
     pov = profile.get("pov") or {}
     angles = "\n".join(f"- {a.get('statement')}" + (f" (frame: {a['frame']})" if a.get("frame") else "")
-                       for a in (pov.get("angles") or [])[:12] if a.get("statement"))
+                       + (f" | idea: {a['idea']}" if a.get("idea") else "")
+                       for a in (pov.get("angles") or [])[:16] if a.get("statement"))
     if not angles:
         return ""
     v = pov.get("voice") or {}
     voice = (f"\nHouse voice: {v.get('tone') or ''}. Use: {', '.join(v.get('use') or [])}. Avoid: {', '.join(v.get('avoid') or [])}."
              if v else "")
     return f"""
-Points of view from the seller's leadership (frame questions and insights through ONE that fits this person; use as
-your own thinking, never as a quote or "our CEO says"):
+MOOLYA THINKING (from the seller's books, DeepTest, blogs and leadership posts). Use it for HOW to frame the problem
+and, in Message 2 and the full pitch, for the substance of insights. Pick ONE view that fits this person; paraphrase,
+never quote or attribute ("our CEO says"):
 {angles}{voice}"""
 
 
@@ -490,28 +488,30 @@ Give 2-4 angles, strongest first."""
 
 
 WRITER = f"""You are the WRITER of LinkedIn outreach for a B2B seller. Rules:
-- The connection note MUST open with the chosen opening hook (lightly edited at most). Every later message
-  keeps that thread going; it must not restart with a generic line.
-- Open on the hook, about THEM: an interest, a career choice, their roots, a current moment, their own words. Never
-  open on a failure scenario at their company. No greetings beyond "Hi <first name>,". No compliments, no
-  "I came across your profile".
-- Message 1 carries one technical observation or question that shows expertise in their exact situation, framed
-  through their world (and, if given, one of the leadership points of view). Specific nouns: system names,
-  migration steps, failure modes. No generic "quality matters".
-- Two messages only. The goal is to START A CONVERSATION, not to sell or book time.
-- The connection note asks for nothing and does not pitch.
-- Message 1 (after they accept) continues the same thread: one sharp, non-obvious insight about their exact
-  situation, then the conversation starter: a question they'd want to answer, or an offer to SEND something useful.
-  It ends with one easy question that needs no meeting.
-- NEVER ask for time: no calls, meetings, demos, "15/30/45 minutes", calendar links or "this week". No service
-  pitch, no list of capabilities, no stats or client counts ("50,000+ engineers", "25 countries").
-- Never name the seller, its products or offerings in either message: their LinkedIn profile does the introducing.
+- PERSONAL HOOK: the connection note MUST open with the chosen opening hook (lightly edited at most), about THEM:
+  an interest, their own words, a career choice, their roots, a current moment (OPENERS). Never open on a failure
+  scenario at their company. No greetings beyond "Hi <first name>,". No compliments, no "I came across your profile".
+  Every later message keeps that personal thread going; it must not restart with a generic line.
+- PERSONALITY + COMMUNICATION PROFILE: write in THEIR voice, following "HOW THEY COMMUNICATE" and their
+  PERSONALITY: match register, length, directness, numbers vs stories, and reuse a word they actually use.
+  Two people with different voices must get differently written messages.
+- CONTEXT GROWS MESSAGE BY MESSAGE: the connection note is only about them; Message 1 brings in the campaign's
+  world (e.g. OTT: playback, devices, live events, DRM) as it touches their work; Message 2 and the full pitch go
+  deeper into it. If a CAMPAIGN is named in the seller block, its context frames every later message.
+- The connection note asks for nothing, does not pitch and does not name the seller.
+- Message 1 (1 day after they accept), 60-90 words: their world (one specific observation about their product,
+  rollout or role) + who we are (one plain first-person line: "we test playback on real Smart TVs...", never
+  "Company X provides...") + an open door to a 15-minute call, phrased softly ("happy to do 15 minutes if useful"),
+  never a booked slot or calendar link. One clear point, one clear ask.
+- No service menus, no list of capabilities, no stats or client counts ("50,000+ engineers", "25 countries").
   Never defend the message ("this isn't a claim about...").
 - Write in THEIR voice, following "HOW THEY COMMUNICATE": match their register, length, directness and the way
   they make a point (numbers vs stories), reuse a word or phrase they actually use where natural, and obey every
   "write to them like this" rule. Two people with different voices must get differently written messages.
 - Plain, peer-to-peer.
 - Never invent facts, clients, metrics or events. Use only the proof points and offers given.
+- Use MOOLYA THINKING (books, DeepTest, blogs, leadership posts) for HOW to frame the problem; ideas may come from
+  the books, always paraphrased in your own words, never quoted or attributed.
 - Hard limits (characters): connection_note {LIMITS['connection_note']}, message_1 {LIMITS['message_1']}.
 - Never use: {', '.join(BANNED)}."""
 
@@ -570,6 +570,17 @@ def bland_line(line: str, ctx: dict, brief: dict | None = None) -> str | None:
     return None
 
 
+def _personal_terms(brief: dict | None) -> set[str]:
+    """Distinctive words from the person's openers and interests: the note must use at least one."""
+    stop = {"their", "about", "which", "where", "there", "these", "joined", "years", "company", "current", "role", "with", "from"}
+    words = set()
+    for o in (brief or {}).get("openers") or []:
+        words |= {w for w in re.findall(r"[a-z][a-z0-9+-]{4,}", o.get("text", "").lower())}
+    for x in ((brief or {}).get("personality") or {}).get("interests") or []:
+        words |= {w for w in re.findall(r"[a-z][a-z0-9+-]{4,}", str(x.get("text", "") if isinstance(x, dict) else x).lower())}
+    return words - stop
+
+
 def _offering_names(profile: dict | None) -> list[str]:
     return [o["name"] for o in (profile or {}).get("offerings", []) if len(o.get("name", "")) > 6]
 
@@ -581,11 +592,14 @@ def lint(msgs: dict, ctx: dict | None = None, seller: str = "", brief: dict | No
     issues = []
     note = msgs.get("connection_note", "")
     m1 = msgs.get("message_1", "")
-    if seller and seller.lower() in m1.lower():
-        issues.append(f"Don't name {seller} in Message 1. Let the conversation start first; their LinkedIn profile shows who you are.")
+    if seller and m1.lower().count(seller.lower()) > 1:
+        issues.append(f"Name {seller} at most once in Message 1 (one plain line on who we are).")
+    personal = _personal_terms(brief)
+    if personal and note and not any(t in note.lower() for t in personal):
+        issues.append("The connection note has no personal hook. Open on one of their OPENERS or interests.")
     for name in _offering_names(profile):
         if name.lower() in (note + " " + m1).lower():
-            issues.append(f"Don't name the offering '{name}' in the first two messages.")
+            issues.append(f"Don't name the offering '{name}' in the connection note or Message 1.")
     for k in MESSAGE_KEYS:
         st = BROCHURE_STATS.search(msgs.get(k, ""))
         if st:
@@ -612,7 +626,11 @@ def lint(msgs: dict, ctx: dict | None = None, seller: str = "", brief: dict | No
         if b in text:
             issues.append(f'Remove the phrase "{b}".')
     for k in MESSAGE_KEYS:
-        m = TIME_ASK.search(msgs.get(k, ""))
+        text_k = msgs.get(k, "")
+        if k == "message_1":   # one soft open door to 15 minutes is fine; anything more is a meeting ask
+            text_k = OPEN_DOOR.sub("", text_k, count=1)
+            text_k = re.sub(r"\bcall\b", "", text_k, count=1, flags=re.I) if OPEN_DOOR.search(msgs.get(k, "")) else text_k
+        m = TIME_ASK.search(text_k)
         if m:
             issues.append(f'{k} asks for time ("{m.group(0)}"). Do not ask for a call or minutes; end with a question they want to answer.')
     if re.search(r"\[[^\]]+\]|\{[^}]+\}|<[^>]+>", " ".join(msgs.get(k, "") for k in MESSAGE_KEYS)):
@@ -666,24 +684,21 @@ def passed(sim: dict, issues: list[str]) -> bool:
 # ------------------------------------------------------------------ 5b. the rest of the conversation
 
 
-SEQUENCE_WRITER = """You are the CONVERSATION WRITER. The connection note and Message 1 are done. Write what comes next,
-stage by stage, so the conversation builds trust before anything is pitched. Same person, same thread, and the same
-voice rules (follow HOW THEY COMMUNICATE and their personality). The seller is NEVER named before stage 6 (reveal).
-No calls, meetings or minutes before stage 9. Plain sentences, no lists, no hype, no stats or client counts.
-Never invent facts, clients or numbers; use only the proof points and offers given. Each later stage will be
-adapted to their real reply, so write natural continuations that still read well on their own.
+SEQUENCE_WRITER = """You are the CONVERSATION WRITER. The connection note and Message 1 are done. Write Message 2
+(the last automated Dripify step, sent 5 days later only if they haven't replied) and the FULL PITCH (sent by hand when
+they reply with interest). Same person, same personal thread, same voice rules (follow HOW THEY COMMUNICATE and their
+PERSONALITY). The campaign's context goes deeper with each message. Plain sentences, no hype, no stats or client
+counts. Never invent facts, clients or numbers; use only the proof points and offers given. Ideas may come from MOOLYA
+THINKING (books, DeepTest, blogs), always paraphrased, never quoted.
 
-FIRST decide the END GOAL: the one offering this conversation leads to, the specific use case at THEIR company (name
-their initiative, system or rollout and what the seller would do for it), the outcome they'd get, what stage 8 sends
-and what stage 9 asks for. Every stage builds toward it: stages 3-5 explore the problem behind that use case without
-naming the seller; stage 6 names the use case plainly; stage 7 checks interest in exactly that use case; stage 8 sends
-something about it; stage 9 asks for time to work on it."""
+FIRST decide the END GOAL: the one offering this leads to, the specific use case at THEIR company (name their
+initiative, system or rollout and what the seller would do for it), the outcome they'd get, the deliverable and the
+ask. Message 2's idea and 15-minute ask are about that use case; the full pitch lays it out."""
 
 
 def lint_sequence(msgs: dict, seller: str = "", profile: dict | None = None) -> list[str]:
+    """Message 2 and the full pitch: limits, no brochure, the right kind of ask."""
     issues = []
-    early = ("mirror", "advice", "give")
-    names = ([seller] if seller else []) + _offering_names(profile)
     for k, label, _, lim, _ in SEQUENCE:
         v = msgs.get(k, "")
         if not v:
@@ -695,28 +710,28 @@ def lint_sequence(msgs: dict, seller: str = "", profile: dict | None = None) -> 
         for b in BANNED:
             if b in low:
                 issues.append(f'{label}: remove "{b}".')
-        if k in early:
-            for n in names:
-                if n.lower() in low:
-                    issues.append(f"{label}: don't name {n} before stage 6.")
+        if k == "message_2":
+            if "just checking" in low or "following up" in low:
+                issues.append(f"{label}: never 'just checking in'; lead with the insight.")
+            if not OPEN_DOOR.search(v):
+                issues.append(f"{label} must end with a specific 15-minute ask tied to the idea.")
             st = BROCHURE_STATS.search(v)
             if st:
                 issues.append(f'{label}: drop the stat "{st.group(0)}".')
-        if k != "specific_ask":
-            m = TIME_ASK.search(v)
-            if m:
-                issues.append(f'{label} asks for time ("{m.group(0)}"); only stage 9 does that.')
-        if k in ("mirror", "advice", "interest_check", "reveal") and "?" not in v:
-            issues.append(f"{label} should end with a question.")
-        if k == "contact" and "email" not in low:
-            issues.append(f"{label} must ask for their email.")
+        if k == "full_pitch":
+            if seller and seller.lower() not in low and " we " not in f" {low} ":
+                issues.append(f"{label}: say who we are in one plain line.")
+            if not OPEN_DOOR.search(v) and not re.search(r"\b(mon|tues|wednes|thurs|fri)day\b|next week", low):
+                issues.append(f"{label}: end with a specific next step (a 15-minute slot).")
+            if re.search(r"(^|\n)\s*([-•*]|\d+\.)\s", v):
+                issues.append(f"{label}: short paragraphs, no bullet lists.")
         if re.search(r"\{[^}]+\}|<[^>]+>", v):
             issues.append(f"{label}: remove placeholders.")
     return issues
 
 
 def sequence(ctx: dict, brief: dict, profile: dict, angle: dict, msgs: dict, trig: dict | None = None) -> tuple[dict, list[str]]:
-    """Stages 3-9 plus warm-up actions, checked by lint_sequence and rewritten once if needed."""
+    """Message 2, the full pitch and warm-up actions, checked by lint_sequence and rewritten once if needed."""
     first = ctx["person"]["full_name"].split()[0]
     stages = "\n".join(f"- {k} ({label}; send: {when}; max {lim} chars): {rule}" for k, label, when, lim, rule in SEQUENCE)
     seller = profile.get("company", "")
@@ -737,9 +752,9 @@ STAGES TO WRITE:
 {stages}
 {critique}
 Return {{"end_goal": {{"offering": one offering name from the seller's list, "use_case": one sentence naming their initiative
-  and what the seller would do for it, "outcome": what they get, "deliverable": what stage 8 sends, "ask": what stage 9 asks}},
-"warmup": [2-3 things to do BEFORE sending the invite: follow them, a thoughtful comment on a recent post of theirs
-or their company's, timing the invite to a fresh event], {", ".join(f'"{k}": str' for k in SEQUENCE_KEYS)}}}"""
+  and what the seller would do for it, "outcome": what they get, "deliverable": what the full pitch offers, "ask": the 15-minute next step}},
+"warmup": [2-3 things to do on day 1, before the invite on day 2: view their profile, like or thoughtfully comment on a
+recent post of theirs (name which), time the invite to a fresh event], {", ".join(f'"{k}": str' for k in SEQUENCE_KEYS)}}}"""
         out = llm.complete_json(SEQUENCE_WRITER, prompt, 2500)
         out = out if isinstance(out, dict) else {}
         seq = {k: str(out.get(k) or "").strip() for k in SEQUENCE_KEYS}
@@ -766,7 +781,7 @@ def lint_goal(goal: dict, seq: dict, profile: dict | None = None) -> list[str]:
     if names and goal["offering"].lower() not in names:
         issues.append(f"END GOAL offering '{goal['offering']}' is not one of the seller's offerings: pick one of {', '.join(names)}.")
     words = _goal_words(goal)
-    for k in ("reveal", "interest_check", "specific_ask"):
+    for k in ("message_2", "full_pitch"):
         if words and not (words & set(re.findall(r"[a-z][a-z0-9-]{3,}", seq.get(k, "").lower()))):
             issues.append(f"{dict((x[0], x[1]) for x in SEQUENCE)[k]} doesn't mention the use case "
                           f"({goal['use_case'][:80]}). Name it plainly.")
@@ -885,13 +900,13 @@ def _run(pitch_id: int) -> None:
                 a, msgs, critique, tries_on_angle = a + 1, None, [], 0
                 _log(pitch_id, f"Angle isn't landing; switching to: {angles[a]['hook']}")
 
-        _log(pitch_id, "Writing the rest of the conversation: mirror, advice, give, reveal, interest check, contact, specific ask")
+        _log(pitch_id, "Writing Message 2 (last automated step) and the full pitch for when they reply")
         try:
             seq, seq_issues = sequence(ctx, brief, profile, angles[best["angle"]], best["messages"], trig)
         except Exception as exc:
-            seq, seq_issues = {"messages": {}, "warmup": []}, [f"Couldn't write stages 3-9: {exc}"]
+            seq, seq_issues = {"messages": {}, "warmup": []}, [f"Couldn't write Message 2 and the full pitch: {exc}"]
         if seq_issues:
-            _log(pitch_id, f"Stages 3-9: {len(seq_issues)} rule issue(s) left to review")
+            _log(pitch_id, f"Message 2 / full pitch: {len(seq_issues)} rule issue(s) left to review")
         messages = {**best["messages"], **seq["messages"]}
 
         _log(pitch_id, "Explaining why it should land and what could still get it refuted")
@@ -918,9 +933,9 @@ def _run(pitch_id: int) -> None:
         if approach.get("decision") == "do not pitch":
             warnings.append(f"Approach: don't pitch this person ({approach.get('reason') or 'poor fit'}). Pick someone else at this account.")
         elif approach.get("decision") == "warm only":
-            warnings.append(f"Approach: warm only ({approach.get('reason') or ''}). Build the relationship and skip the offer stages.")
+            warnings.append(f"Approach: warm only ({approach.get('reason') or ''}). Keep to the note and Message 1; hold the full pitch.")
         if seq_issues:
-            warnings.append("Stages 3-9 still break some rules; review them: " + "; ".join(seq_issues[:4]))
+            warnings.append("Message 2 / full pitch still break some rules; review them: " + "; ".join(seq_issues[:4]))
         if best is not rounds[-1] or not passed(best["simulation"], best["lint"]):
             warnings.append(f"Best draft scored {best['simulation']['overall']:g}/10 against a pass mark of {PASS_SCORE:g}. Review before sending.")
         data = {"angle": angles[best["angle"]], "angles": angles, "triggers": trig["triggers"],

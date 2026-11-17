@@ -13,15 +13,10 @@ import { Avatar } from "@/components/ui/misc";
 import { Samples, txt } from "@/components/BriefSheet";
 
 const MSGS: { k: string; label: string; limit?: number; hint: string; later?: boolean }[] = [
-  { k: "connection_note", label: "1 · Connection note", limit: 280, hint: "Sent with the invite. About them, nothing to sell." },
-  { k: "message_1", label: "2 · Spark", limit: 500, hint: "After they accept: one observation in their world and a question. No seller name." },
-  { k: "mirror", label: "3 · Mirror & deepen", limit: 500, hint: "After their first real reply. Reuse their words.", later: true },
-  { k: "advice", label: "4 · Ask for advice", limit: 500, hint: "After they reply to 3. They teach, you learn.", later: true },
-  { k: "give", label: "5 · Give", limit: 500, hint: "One useful insight. Expertise shows, the company isn't named.", later: true },
-  { k: "reveal", label: "6 · Natural reveal", limit: 400, hint: "When they ask what you do, or after 5 lands. One line, then back to them.", later: true },
-  { k: "interest_check", label: "7 · Interest check", limit: 400, hint: "Ask for interest, not time.", later: true },
-  { k: "contact", label: "8 · Contact", limit: 400, hint: "After a yes or maybe: send something useful, ask for their email.", later: true },
-  { k: "specific_ask", label: "9 · Specific ask", limit: 400, hint: "After an email exchange: one day and time, 15 minutes.", later: true },
+  { k: "connection_note", label: "1 · Connection note", limit: 280, hint: "Dripify day 2, with the invite, after a profile view and a post like. A personal hook about them; no pitch." },
+  { k: "message_1", label: "2 · Message 1", limit: 600, hint: "1 day after they accept. Their world + who we are + an open door to a 15-minute call." },
+  { k: "message_2", label: "3 · Message 2", limit: 700, hint: "5 days later, only if no reply. Useful insight + one idea for them + a specific 15-minute ask. Last automated step; the sequence stops on reply." },
+  { k: "full_pitch", label: "Full pitch", limit: 1400, hint: "By hand: send when they reply with interest, ask what you do, or say 'tell me more'. Adapt the opening to what they said.", later: true },
 ];
 const APPROACH_TONE: Record<string, any> = { pitch: "green", "warm only": "saffron", "do not pitch": "red" };
 
@@ -109,10 +104,10 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
                   <dl className="mt-3 grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2">
                     <div><dt className="text-[11.5px] text-muted">Offering</dt><dd className="font-medium">{d.end_goal.offering}</dd></div>
                     {d.end_goal.outcome && <div><dt className="text-[11.5px] text-muted">What they get</dt><dd>{d.end_goal.outcome}</dd></div>}
-                    {d.end_goal.deliverable && <div><dt className="text-[11.5px] text-muted">Message 8 sends</dt><dd>{d.end_goal.deliverable}</dd></div>}
-                    {d.end_goal.ask && <div><dt className="text-[11.5px] text-muted">Message 9 asks for</dt><dd>{d.end_goal.ask}</dd></div>}
+                    {d.end_goal.deliverable && <div><dt className="text-[11.5px] text-muted">Full pitch offers</dt><dd>{d.end_goal.deliverable}</dd></div>}
+                    {d.end_goal.ask && <div><dt className="text-[11.5px] text-muted">The ask</dt><dd>{d.end_goal.ask}</dd></div>}
                   </dl>
-                  <p className="mt-2 text-[11.5px] text-faint">Messages 1-5 build the conversation without selling; 6 names this use case, 7-9 move it to a meeting.</p>
+                  <p className="mt-2 text-[11.5px] text-faint">The note opens on them, Message 1 brings in their world, Message 2 offers one idea for this use case, the full pitch lays it out.</p>
                 </section>
               )}
               {!d.research?.first_hand && (String(p.full_name || person.full_name).includes("*")
@@ -224,7 +219,7 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
                 </div>
                 {d.warmup?.length > 0 && (
                   <div className="mb-3 rounded-md border border-dashed border-line px-3 py-2 text-[12.5px]">
-                    <b className="font-semibold">Before the invite</b>
+                    <b className="font-semibold">Day 1, before the invite</b>
                     <ul className="mt-1 list-disc pl-4 text-muted">{d.warmup.map((w: string) => <li key={w}>{w}</li>)}</ul>
                   </div>
                 )}
@@ -234,11 +229,11 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
                     const firstLater = m.later && !arr[i - 1]?.later;
                     return (
                       <div key={m.k}>
-                        {firstLater && <p className="mb-2 mt-4 border-t border-line-2 pt-3 text-[12px] text-muted">The rest of the conversation. Send these by hand as they reply, and adapt each one to what they actually said.</p>}
-                        <div className="mb-1 flex items-center gap-2 text-[12px]"><b className="font-semibold">{m.label}</b><span className="text-faint">{m.hint}</span>
+                        {firstLater && <p className="mb-2 mt-4 border-t border-line-2 pt-3 text-[12px] text-muted">Not in the Dripify sequence. Send by hand when they reply, and adapt the opening to what they actually said.</p>}
+                        <div className="mb-1 flex items-center gap-2 text-[12px]"><b className="shrink-0 whitespace-nowrap font-semibold">{m.label}</b><span className="text-faint">{m.hint}</span>
                           <span className={cn("ml-auto tabular-nums", over ? "font-semibold text-danger" : "text-faint")}>{v.length}{m.limit ? `/${m.limit}` : ""}</span>
                           <button onClick={() => copy(v)} className="text-faint hover:text-fg" aria-label={`Copy ${m.label}`}><Copy className="size-3.5" /></button></div>
-                        <Textarea rows={m.k === "connection_note" ? 3 : m.later ? 3 : 5} value={v}
+                        <Textarea rows={m.k === "connection_note" ? 3 : m.later ? 7 : 5} value={v}
                           onChange={(e) => setDraft((x) => ({ ...x, [m.k]: e.target.value }))} className="text-[13px] leading-relaxed" />
                       </div>
                     );

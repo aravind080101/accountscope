@@ -15,26 +15,32 @@ def test_openers_need_a_source_and_skip_private_topics():
 
 def test_first_two_messages_cannot_sell():
     profile = {"company": "Moolya", "offerings": [{"name": "Migration Assurance"}]}
-    msgs = {"connection_note": "Hi Vijay, going from RBL to a bank founded in 1904 is a rare move. What drew you to it?",
-            "message_1": "Moolya's Migration Assurance is trusted by 50,000+ engineers across 25 countries. Thoughts?"}
-    issues = " | ".join(pitch.lint(msgs, None, "Moolya", None, profile))
-    assert "Don't name Moolya in Message 1" in issues
-    assert "Migration Assurance" in issues
-    assert "stat" in issues
+    brief = {"openers": [{"level": "L3", "text": "Left RBL to lead a bank founded in 1904", "source": 0}]}
+    note = "Hi Vijay, going from RBL to a bank founded in 1904 is a rare move. What drew you to it?"
+    ok = {"connection_note": note,
+          "message_1": "Moving customers to new net banking is where payees go missing. At Moolya we test migrations like this "
+                       "on real accounts before cutover. Happy to do 15 minutes if useful?"}
+    assert pitch.lint(ok, None, "Moolya", brief, profile) == []          # one plain 'who we are' + a soft open door is fine
+    bad = {"connection_note": "Hi Vijay, quick note about QA.",
+           "message_1": "Moolya's Migration Assurance is trusted by 50,000+ engineers. Moolya can help. Can we book a call Tuesday?"}
+    issues = " | ".join(pitch.lint(bad, None, "Moolya", brief, profile))
+    assert "no personal hook" in issues
+    assert "at most once" in issues and "Migration Assurance" in issues and "stat" in issues and "asks for time" in issues
 
 
-def test_stages_3_to_9_rules():
-    good = {"mirror": "That makes sense. Which product line worries you most?",
-            "advice": "What would you do differently this time?",
-            "give": "One pattern I keep seeing: totals match, per-customer checks don't.",
-            "reveal": "I work on testing at Moolya. How are you splitting the tests?",
-            "interest_check": "Worth comparing notes on the cutover?",
-            "contact": "I have a one-page checklist. Best email to send it to?",
-            "specific_ask": "Would 15 minutes on Thursday at 4pm work?"}
+def test_message_2_and_full_pitch_rules():
+    good = {"message_2": "One thing I keep seeing on Smart TV launches: DRM licences renew fine on phones but fail on older "
+                         "Tizen models. One idea: a 2-day pass on your top 5 TV models before the next release. "
+                         "Worth 15 minutes next week to walk through it?",
+            "full_pitch": "Glad that landed. We are a testing team that works on streaming apps, mostly playback and devices. "
+                          "For your Smart TV rollout we would map your top devices, run DRM and playback checks on real TVs, "
+                          "then automate the ones that break most. Happy to share the device checklist. "
+                          "Would 15 minutes on Thursday work?"}
     assert pitch.lint_sequence(good, "Moolya") == []
-    bad = dict(good, mirror="Moolya can help, can we get on a call?", contact="Want the checklist?")
+    bad = dict(good, message_2="Just checking in on my last note.",
+               full_pitch="- point one\n- point two")
     issues = " | ".join(pitch.lint_sequence(bad, "Moolya"))
-    assert "before stage 6" in issues and "asks for time" in issues and "email" in issues
+    assert "just checking" in issues and "15-minute ask" in issues and "bullet" in issues and "who we are" in issues
 
 
 def test_person_signals_count_as_specific():
@@ -183,13 +189,11 @@ def test_leadership_check_retires_people_recent_sources_say_have_left(monkeypatc
 
 def test_conversation_must_lead_to_a_named_use_case():
     profile = {"offerings": [{"name": "Migration testing"}]}
-    seq = {"reveal": "I work on testing at Moolya. How are you approaching the net banking migration?",
-           "interest_check": "Worth comparing notes on the net banking migration?",
-           "specific_ask": "Would 15 minutes on Thursday work to go through the migration cutover plan?"}
+    seq = {"message_2": "One idea for the net banking migration: reconcile payees per customer. Worth 15 minutes next week?",
+           "full_pitch": "We test migrations. For your net banking migration we would reconcile every customer. 15 minutes Thursday?"}
     goal = {"offering": "Migration testing", "use_case": "Testing the net banking migration of beneficiaries and limits"}
     assert pitch.lint_goal(goal, seq, profile) == []
     assert "END GOAL" in pitch.lint_goal({}, seq, profile)[0]
-    assert "isn't" not in " ".join(pitch.lint_goal({**goal, "offering": "Game testing"}, seq, profile))
     assert any("not one of the seller's offerings" in i for i in pitch.lint_goal({**goal, "offering": "Game testing"}, seq, profile))
-    vague = dict(seq, specific_ask="Would 15 minutes on Thursday work for a quick chat?")
-    assert any("9 · Specific ask" in i for i in pitch.lint_goal(goal, vague, profile))
+    vague = dict(seq, full_pitch="We help teams. 15 minutes Thursday?")
+    assert any("Full pitch" in i for i in pitch.lint_goal(goal, vague, profile))

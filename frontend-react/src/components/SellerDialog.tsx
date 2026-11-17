@@ -51,7 +51,7 @@ export function SellerDialog({ open, onOpenChange, onSaved }: { open: boolean; o
 
   const buildPov = async () => {
     setBusy("pov");
-    try { const p = await post("/api/profile/pov"); setProfile(p); onSaved(); toast.success("Points of view updated. New pitches will use them."); }
+    try { const p = await post("/api/profile/pov"); setProfile(p); onSaved(); toast.success("Moolya thinking updated. New pitches will use it."); }
     catch (e: any) { toast.error(e.message); } finally { setBusy(""); }
   };
 
@@ -124,17 +124,17 @@ export function SellerDialog({ open, onOpenChange, onSaved }: { open: boolean; o
             </section>
             <section>
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">Leadership points of view</h3>
+                <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">Moolya thinking</h3>
                 <Button size="sm" variant="outline" onClick={() => povRef.current?.click()} disabled={!!busy}>
                   {busy === "pov" ? <Loader2 className="animate-spin" /> : <Upload />}Upload
                 </Button>
                 <input ref={povRef} type="file" multiple accept=".pdf,.pptx,.docx,.txt,.md" className="hidden" onChange={(e) => upload(e.target.files, "pov")} />
               </div>
-              <p className="mb-2 text-[12px] text-muted">The CEO's or founder's decks, posts, talks and articles. Pitches frame their questions and insights through these views (never quoted).</p>
-              <div className="flex gap-1.5"><Input value={povUrl} onChange={(e) => setPovUrl(e.target.value)} placeholder="Or paste a link to a post or article" className="text-[12px]" />
+              <p className="mb-2 text-[12px] text-muted">Your books (e.g. Growth Driven Testing, Buddha in Testing), DeepTest pages, blogs and leadership posts. Pitches use them for how to frame the problem, and Message 2 and the full pitch can draw ideas from them, always paraphrased, never quoted.</p>
+              <div className="flex gap-1.5"><Input value={povUrl} onChange={(e) => setPovUrl(e.target.value)} placeholder="Or paste a link: DeepTest page, blog post, article" className="text-[12px]" />
                 <Button size="sm" variant="outline" onClick={addPovUrl} disabled={!!busy || !povUrl.trim()}><Globe />Add</Button></div>
-              <div className="mt-2"><SourceList items={pov} onRemove={remove} empty="No leadership material yet" /></div>
-              <Button size="sm" className="mt-2 w-full" onClick={buildPov} disabled={!!busy || !pov.length}><Megaphone />Build points of view from {pov.length} source{pov.length === 1 ? "" : "s"}</Button>
+              <div className="mt-2"><SourceList items={pov} onRemove={remove} empty="No books, DeepTest pages or blogs yet" /></div>
+              <Button size="sm" className="mt-2 w-full" onClick={buildPov} disabled={!!busy || !pov.length}><Megaphone />Build Moolya thinking from {pov.length} source{pov.length === 1 ? "" : "s"}</Button>
               {profile?.pov?.angles?.length > 0 && (
                 <ul className="mt-2 space-y-1 text-[12px] text-muted">{profile.pov.angles.slice(0, 6).map((a: any, i: number) => <li key={i} className="border-l-2 border-saffron pl-2">{a.statement}</li>)}
                   {profile.pov.angles.length > 6 && <li className="text-faint">+{profile.pov.angles.length - 6} more</li>}</ul>

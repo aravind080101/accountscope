@@ -66,7 +66,7 @@ export default function OutreachPage() {
           {campaignList.map((c: any) => <option key={c.id} value={String(c.id)}>Campaign: {c.name}</option>)}
         </Select>
         {FILTERS.map(([k, l]) => <button key={k} onClick={() => setF(k)} title={k === "weak" ? "Scored under 7.5/10 against the simulated buyer" : undefined} className={cn("h-7 shrink-0 whitespace-nowrap rounded-full border px-3 text-[12.5px]", f === k ? "border-ink bg-ink text-white" : "border-line bg-white text-muted hover:text-fg")}>{l}</button>)}
-        <p className="ml-auto max-w-[520px] text-right text-[12px] text-faint">Select pitches and click Re-run to rewrite them with the latest rules. The CSV has all 9 messages per lead. In Dripify, map them to Custom Lead Fields and use them as variables.</p>
+        <p className="ml-auto max-w-[520px] text-right text-[12px] text-faint">Select pitches and click Re-run to rewrite them with the latest rules. The CSV has the connection note, Message 1, Message 2 and the full pitch per lead. In Dripify, map them to Custom Lead Fields and use them as variables.</p>
       </div>
       <div className="flex-1">
         {!data ? <div className="p-10 text-center"><Loader2 className="mx-auto size-5 animate-spin text-muted" /></div>
