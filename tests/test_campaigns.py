@@ -83,3 +83,55 @@ def test_campaign_pitch_does_not_replace_the_general_one():
     assert {p["id"] for p in pitch.list_all(cid, 1, campaign_id=camp)} == {again}
     assert {p["id"] for p in pitch.list_all(cid, 1, general_only=True)} == {general}
     assert pitch.get(again)["campaign"] == "Camp A"
+
+
+def test_decks_are_uploaded_to_and_moved_between_campaigns(monkeypatch):
+    c = _client(monkeypatch)
+    ott = c.post("/api/campaigns", json={"name": "OTT India"}).json()
+    files = {"files": ("ott-capabilities.txt", ("Smart TV playback testing, DRM and adaptive bitrate for streaming apps. " * 5).encode())}
+    r = c.post(f"/api/profile/sources?kind=deck&campaign_id={ott['id']}", files=files)
+    assert r.status_code == 200, r.text
+    listed = {s["name"]: s for s in c.get("/api/profile/sources").json()}
+    assert listed["ott-capabilities.txt"]["campaign_id"] == ott["id"] and listed["ott-capabilities.txt"]["campaign_name"] == "OTT India"
+    assert "ott-capabilities.txt" not in [s["name"] for s in profiles.list_sources()]          # not in the general library
+    # an existing general deck is filed under the campaign, then moved back
+    gen = profiles.add_source("device-lab.pdf", "deck", GENERAL_DECK)
+    assert c.put(f"/api/profile/sources/{gen['id']}/campaign", json={"campaign_id": ott["id"]}).status_code == 200
+    assert sorted(s["name"] for s in c.get(f"/api/campaigns/{ott['id']}").json()["sources"]) == ["device-lab.pdf", "ott-capabilities.txt"]
+    assert c.put(f"/api/profile/sources/{gen['id']}/campaign", json={"campaign_id": None}).status_code == 200
+    assert "device-lab.pdf" in [s["name"] for s in profiles.list_sources()]
+    assert c.put(f"/api/profile/sources/{gen['id']}/campaign", json={"campaign_id": 99999}).status_code == 404
+    assert c.post("/api/profile/sources?kind=pov&campaign_id=%d" % ott["id"], files=files).status_code == 400
+
+
+def test_general_pitches_weigh_every_deck_campaign_pitches_only_their_own(monkeypatch):
+    with db.session() as s:
+        s.execute("DELETE FROM seller_doc")
+    camp = campaigns.create("Banking Q2")
+    profiles.add_source("bank-migration.pdf", "deck", BANK_DECK, campaign_id=camp["id"])
+    profiles.add_source("device-lab.pdf", "deck", GENERAL_DECK)
+    assert {d["doc"] for d in profiles.deck_catalog(None, every=True)} == {"bank-migration.pdf", "device-lab.pdf"}
+    assert {d["doc"] for d in profiles.deck_catalog(camp["id"], every=True)} == {"bank-migration.pdf"}
+    assert {d["doc"] for d in profiles.deck_catalog(None)} == {"device-lab.pdf"}
+
+
+def test_deck_matcher_keeps_only_real_decks_that_answer_a_named_need(monkeypatch):
+    ctx = {"person": {"name": "Ravi", "title": "VP Engineering", "company": "aha", "industry": "OTT"},
+           "works": [{"kind": "initiative", "name": "Launch on Samsung and LG TVs", "summary": "", "tech": ["Tizen", "webOS"]}],
+           "tech": ["Tizen"]}
+    catalog = [{"doc": "Moolya_OTT.pdf", "kind": "deck", "head": "OTT streaming capabilities"},
+               {"doc": "Moolya_Device_Lab.pdf", "kind": "deck", "head": "Real device lab"}]
+
+    def fake(system, prompt, *a, **k):
+        assert "DECK MATCHER" in system and "Launch on Samsung and LG TVs" in prompt and "Moolya_Device_Lab.pdf" in prompt
+        return {"matches": [
+            {"doc": "Moolya_Device_Lab.pdf", "company_need": "Smart TV launch on Tizen and webOS", "evidence": "Launch on Samsung and LG TVs",
+             "deck_point": "real TV devices", "use_in": "message_2", "strength": 9},
+            {"doc": "Made_up.pdf", "company_need": "x", "strength": 9},                          # not a real deck
+            {"doc": "Moolya_OTT.pdf", "company_need": "streaming in general", "strength": 4}]}   # too weak
+    monkeypatch.setattr(pitch.llm, "complete_json", fake)
+    out = pitch.match_decks(ctx, {}, {"triggers": []}, [], catalog, [])
+    assert [m["doc"] for m in out["matches"]] == ["Moolya_Device_Lab.pdf"]
+    assert out["matches"][0]["use_in"] == "message_2"
+    block = pitch._material_block({"_material": [{"doc": "Moolya_Device_Lab.pdf", "text": "Real TVs"}], "_deck_matches": out["matches"]})
+    assert "answers their need: Smart TV launch" in block and "Never in the connection note" in block

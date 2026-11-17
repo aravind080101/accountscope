@@ -186,11 +186,32 @@ def add_source(name: str, kind: str, text: str, url: str | None = None, campaign
         return {"id": cur.lastrowid, "name": name, "kind": kind, "chars": len(text), "campaign_id": campaign_id}
 
 
-def list_sources() -> list[dict]:
+def list_sources(include_campaigns: bool = False) -> list[dict]:
+    """The general library. include_campaigns=True also lists decks filed under a campaign, with the campaign's name."""
+    where = "d.workspace_id=?" + ("" if include_campaigns else " AND d.campaign_id IS NULL")
     with db.session() as s:
         return [dict(r) for r in s.execute(
-            "SELECT id, name, kind, url, LENGTH(text) chars, added_at FROM seller_doc WHERE workspace_id=? AND campaign_id IS NULL "
-            "ORDER BY kind, added_at DESC", (tenancy.current(),))]
+            "SELECT d.id, d.name, d.kind, d.url, LENGTH(d.text) chars, d.added_at, d.campaign_id, c.name campaign_name "
+            f"FROM seller_doc d LEFT JOIN campaign c ON c.id=d.campaign_id WHERE {where} "
+            "ORDER BY d.kind, d.added_at DESC", (tenancy.current(),))]
+
+
+def assign_source(sid: int, campaign_id: int | None) -> dict:
+    """File a deck under a campaign (or back in the general library). Decks only; web pages and Moolya thinking stay general."""
+    with db.session() as s:
+        wid = tenancy.current()
+        row = s.execute("SELECT id, name, kind FROM seller_doc WHERE id=? AND workspace_id=?", (sid, wid)).fetchone()
+        if not row:
+            raise LookupError("Document not found")
+        if row["kind"] != "deck":
+            raise ValueError("Only decks and documents can be assigned to a campaign")
+        if campaign_id is not None and not s.execute("SELECT 1 FROM campaign WHERE id=? AND workspace_id=?", (campaign_id, wid)).fetchone():
+            raise LookupError("Campaign not found")
+        # a deck with the same name already in the target replaces it
+        s.execute("DELETE FROM seller_doc WHERE workspace_id=? AND name=? AND kind='deck' AND campaign_id IS ? AND id!=?",
+                  (wid, row["name"], campaign_id, sid))
+        s.execute("UPDATE seller_doc SET campaign_id=? WHERE id=?", (campaign_id, sid))
+    return {"id": sid, "campaign_id": campaign_id}
 
 
 def delete_source(sid: int) -> None:
@@ -472,14 +493,38 @@ def _words(text: str) -> list[str]:
     return [w for w in _re.findall(r"[a-z][a-z0-9+.-]{2,}", (text or "").lower()) if w not in _STOP]
 
 
-def relevant_material(query: str, k: int = 4, min_hits: int = 3, campaign_id: int | None = None) -> list[dict]:
+def _scope(campaign_id: int | None, every: bool) -> tuple[str, tuple]:
+    """A campaign's own decks; or, for general outreach with every=True, all decks in every campaign plus the general library."""
+    return ("", ()) if every and campaign_id is None else (" AND campaign_id IS ?", (campaign_id,))
+
+
+def deck_catalog(campaign_id: int | None = None, every: bool = False) -> list[dict]:
+    """Every deck/document (not leadership POV) with its opening text, so a matcher can judge what each one is about."""
+    where, args = _scope(campaign_id, every)
+    with db.session() as s:
+        rows = [dict(r) for r in s.execute("SELECT name, kind, text FROM seller_doc WHERE workspace_id=? AND kind!='pov'"
+                                           f"{where} ORDER BY id", (tenancy.current(), *args))]
+    return [{"doc": r["name"], "kind": r["kind"], "head": " ".join((r["text"] or "").split())[:500]} for r in rows if (r["text"] or "").strip()]
+
+
+def doc_passages(doc: str, query: str, k: int = 2, campaign_id: int | None = None, every: bool = False) -> list[dict]:
+    """The passages of one document closest to a need; its opening if nothing overlaps."""
+    got = [m for m in relevant_material(query, k=20, min_hits=1, campaign_id=campaign_id, every=every) if m["doc"] == doc][:k]
+    if got:
+        return got
+    head = next((c for c in deck_catalog(campaign_id, every) if c["doc"] == doc), None)
+    return [{"doc": doc, "kind": head["kind"], "text": head["head"], "matched": [], "score": 0}] if head else []
+
+
+def relevant_material(query: str, k: int = 4, min_hits: int = 3, campaign_id: int | None = None, every: bool = False) -> list[dict]:
     """Passages from your decks and web pages (not leadership POV) that match the query, best first.
     Free and local: chunks scored by shared rare words. A passage needs min_hits distinct matching words to count,
     so nothing is returned when the decks don't speak to this person's needs."""
     import math
+    where, args = _scope(campaign_id, every)
     with db.session() as s:
-        docs = [dict(r) for r in s.execute("SELECT name, kind, text FROM seller_doc WHERE workspace_id=? AND kind!='pov' "
-                                           "AND campaign_id IS ?", (tenancy.current(), campaign_id))]
+        docs = [dict(r) for r in s.execute("SELECT name, kind, text FROM seller_doc WHERE workspace_id=? AND kind!='pov'"
+                                           f"{where}", (tenancy.current(), *args))]
     chunks = []
     for d in docs:
         text = " ".join((d["text"] or "").split())

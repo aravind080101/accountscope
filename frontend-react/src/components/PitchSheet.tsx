@@ -158,17 +158,28 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
               </section>
 
               {/* what the messages took from your decks */}
-              {(d.angle?.deck_support || d.deck_material?.length > 0) && (
+              {(d.deck_matches?.length > 0 || d.deck_no_fit || d.angle?.deck_support || d.deck_material?.length > 0) && (
                 <section className="rounded-lg border border-line p-4">
-                  <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted"><FileText className="size-3.5" />From your decks</div>
-                  {d.angle?.deck_support?.doc
-                    ? <p className="mb-2 text-[13px]"><Badge tone="green">Used</Badge> <b className="font-medium">{d.angle.deck_support.doc}</b>: {d.angle.deck_support.point}</p>
-                    : <p className="mb-2 text-[12.5px] text-muted">Matching passages were found, but none fit this person's current need closely enough to use.</p>}
-                  <details className="text-[12.5px]"><summary className="cursor-pointer text-muted">{d.deck_material?.length || 0} matching passage{d.deck_material?.length === 1 ? "" : "s"}</summary>
-                    <ul className="mt-2 space-y-2">{(d.deck_material || []).map((m: any, i: number) => (
+                  <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted"><FileText className="size-3.5" />Decks matched to {person?.company || "this company"}</div>
+                  {d.deck_matches?.length > 0 ? (
+                    <ul className="space-y-2 text-[13px]">{d.deck_matches.map((m: any, i: number) => (
+                      <li key={i} className="rounded-md border border-line-2 p-2.5">
+                        <div className="flex flex-wrap items-center gap-1.5"><b className="font-medium">{m.doc}</b><Badge tone="green">{m.strength}/10</Badge>
+                          <span className="text-[11.5px] text-faint">used in {m.use_in === "both" ? "Message 2 + full pitch" : m.use_in === "message_2" ? "Message 2" : "full pitch"}</span></div>
+                        <p className="mt-1"><span className="text-muted">Their need:</span> {m.company_need}</p>
+                        {m.evidence && <p className="text-[12.5px] text-muted">Evidence: {m.evidence}</p>}
+                        {m.deck_point && <p className="text-[12.5px]"><span className="text-muted">From the deck:</span> {m.deck_point}</p>}
+                      </li>))}</ul>
+                  ) : d.deck_no_fit ? <p className="text-[12.5px] text-muted">No deck fits this company: {d.deck_no_fit}</p>
+                    : d.angle?.deck_support?.doc
+                      ? <p className="mb-2 text-[13px]"><Badge tone="green">Used</Badge> <b className="font-medium">{d.angle.deck_support.doc}</b>: {d.angle.deck_support.point}</p>
+                      : <p className="mb-2 text-[12.5px] text-muted">Matching passages were found, but none fit this person's current need closely enough to use.</p>}
+                  {d.deck_material?.length > 0 && (
+                  <details className="mt-2 text-[12.5px]"><summary className="cursor-pointer text-muted">{d.deck_material.length} passage{d.deck_material.length === 1 ? "" : "s"} given to the writer</summary>
+                    <ul className="mt-2 space-y-2">{d.deck_material.map((m: any, i: number) => (
                       <li key={i} className="rounded-md border border-line-2 p-2"><div className="flex items-center gap-1.5"><b className="font-medium">{m.doc}</b>
-                        <span className="text-[11px] text-faint">matched: {(m.matched || []).join(", ")}</span></div>
-                        <p className="mt-0.5 line-clamp-3 text-muted">{m.text}</p></li>))}</ul></details>
+                        {m.matched?.length > 0 && <span className="text-[11px] text-faint">matched: {m.matched.join(", ")}</span>}</div>
+                        <p className="mt-0.5 line-clamp-3 text-muted">{m.text}</p></li>))}</ul></details>)}
                 </section>
               )}
 

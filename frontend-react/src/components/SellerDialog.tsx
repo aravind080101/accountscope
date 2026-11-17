@@ -5,9 +5,10 @@ import { api, post } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Input, Textarea } from "@/components/ui/input";
+import { Input, Select, Textarea } from "@/components/ui/input";
 
-type Source = { id: number; name: string; kind: "deck" | "web" | "pov"; url?: string; chars: number };
+type Source = { id: number; name: string; kind: "deck" | "web" | "pov"; url?: string; chars: number; campaign_id?: number | null; campaign_name?: string | null };
+type Campaign = { id: number; name: string };
 
 const DEFAULT_TARGETS = "Moolya, moolya.com\nBugasura, bugasura.io";
 
@@ -22,10 +23,34 @@ export function SellerDialog({ open, onOpenChange, onSaved }: { open: boolean; o
   const [json, setJson] = useState<string | null>(null);
   const [rescore, setRescore] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [target, setTarget] = useState<string>("");   // campaign the next upload goes to; "" = not chosen yet
 
   const load = async () => {
-    const [p, s] = await Promise.all([api<any>("/api/profile"), api<Source[]>("/api/profile/sources")]);
-    setProfile(p.profile); setSources(s);
+    const [p, s, c] = await Promise.all([api<any>("/api/profile"), api<Source[]>("/api/profile/sources"), api<Campaign[]>("/api/campaigns").catch(() => [])]);
+    setProfile(p.profile); setSources(s); setCampaigns(c);
+  };
+
+  const newCampaign = async (): Promise<string | null> => {
+    const name = window.prompt("Name the campaign (e.g. OTT India Q4)")?.trim();
+    if (!name) return null;
+    try { const c = await post("/api/campaigns", { name }); setCampaigns((x) => [...x, c]); toast.success(`Campaign "${c.name}" created`); return String(c.id); }
+    catch (e: any) { toast.error(e.message); return null; }
+  };
+
+  const pickTarget = async (v: string) => {
+    if (v === "__new") { const id = await newCampaign(); setTarget(id || ""); } else setTarget(v);
+  };
+
+  const assign = async (sid: number, v: string) => {
+    let cid: string | null = v;
+    if (v === "__new") cid = await newCampaign();
+    if (cid === null) return;
+    try {
+      await api(`/api/profile/sources/${sid}/campaign`, { method: "PUT", body: JSON.stringify({ campaign_id: cid === "general" ? null : Number(cid) }) });
+      await load();
+      toast.success(cid === "general" ? "Moved to General" : `Moved to ${campaigns.find((c) => String(c.id) === cid)?.name || "the campaign"}`);
+    } catch (e: any) { toast.error(e.message); }
   };
   useEffect(() => { if (open) { load(); setJson(null); } }, [open]);
 
@@ -35,7 +60,8 @@ export function SellerDialog({ open, onOpenChange, onSaved }: { open: boolean; o
     const fd = new FormData();
     Array.from(files).forEach((f) => fd.append("files", f));
     try {
-      const body = await api<any>(`/api/profile/sources?kind=${kind}`, { method: "POST", body: fd });
+      const where = kind === "deck" && target && target !== "general" ? `&campaign_id=${target}` : "";
+      const body = await api<any>(`/api/profile/sources?kind=${kind}${where}`, { method: "POST", body: fd });
       toast.success(`Added ${body.added.length} file${body.added.length === 1 ? "" : "s"}`);
       body.errors?.forEach((e: string) => toast.error(e));
       await load();
@@ -100,13 +126,22 @@ export function SellerDialog({ open, onOpenChange, onSaved }: { open: boolean; o
             <section>
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-[12px] font-semibold uppercase tracking-wide text-muted">Decks & documents</h3>
-                <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={!!busy}>
+                <Button size="sm" variant="outline" onClick={() => { if (!target) { toast.error("Pick a campaign for these decks first"); return; } fileRef.current?.click(); }} disabled={!!busy}>
                   {busy === "upload" ? <Loader2 className="animate-spin" /> : <Upload />}Upload
                 </Button>
                 <input ref={fileRef} type="file" multiple accept=".pdf,.pptx,.docx,.txt,.md" className="hidden" onChange={(e) => upload(e.target.files)} />
               </div>
               <p className="mb-2 text-[12px] text-muted">PDF, PowerPoint (.pptx), Word or text. Sales decks, case studies, capability docs.</p>
-              <SourceList items={decks} onRemove={remove} empty="No decks yet" />
+              <label className="mb-2 flex items-center gap-2 text-[12px] text-muted">
+                <span className="shrink-0">Upload to</span>
+                <Select value={target} onChange={(e) => pickTarget(e.target.value)} className="h-7 flex-1 text-[12.5px]" aria-label="Campaign for new decks">
+                  <option value="">Choose a campaign…</option>
+                  {campaigns.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                  <option value="general">General (every pitch)</option>
+                  <option value="__new">+ New campaign…</option>
+                </Select>
+              </label>
+              <DeckGroups items={decks} campaigns={campaigns} onRemove={remove} onAssign={assign} />
             </section>
             <section>
               <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">Web research</h3>
@@ -180,6 +215,46 @@ export function SellerDialog({ open, onOpenChange, onSaved }: { open: boolean; o
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function DeckGroups({ items, campaigns, onRemove, onAssign }: { items: Source[]; campaigns: Campaign[]; onRemove: (id: number) => void; onAssign: (id: number, v: string) => void }) {
+  if (!items.length) return <p className="text-[12px] text-faint">No decks yet</p>;
+  const groups = new Map<string, { label: string; items: Source[] }>();
+  for (const d of items) {
+    const key = d.campaign_id ? String(d.campaign_id) : "general";
+    const label = d.campaign_id ? (d.campaign_name || "Campaign") : "General (every pitch)";
+    if (!groups.has(key)) groups.set(key, { label, items: [] });
+    groups.get(key)!.items.push(d);
+  }
+  const ordered = [...groups.entries()].sort(([a], [b]) => (a === "general" ? 1 : b === "general" ? -1 : 0));
+  return (
+    <div className="max-h-72 space-y-2 overflow-y-auto">
+      {ordered.map(([key, g]) => (
+        <div key={key} className="rounded-lg border border-line">
+          <div className="flex items-center gap-1.5 border-b border-line bg-canvas px-2.5 py-1 text-[11.5px] font-semibold text-muted">
+            {key === "general" ? <FileText className="size-3" /> : <Megaphone className="size-3" />}{g.label}
+            <span className="font-normal text-faint">· {g.items.length}</span>
+          </div>
+          <ul className="divide-y divide-line">
+            {g.items.map((s) => (
+              <li key={s.id} className="group flex items-center gap-2 px-2.5 py-1.5 text-[12.5px]">
+                <FileText className="size-3.5 shrink-0 text-muted" />
+                <span className="min-w-0 flex-1 truncate" title={s.name}>{s.name}</span>
+                <span className="text-[11px] text-faint">{Math.round(s.chars / 1000)}k</span>
+                <Select value={s.campaign_id ? String(s.campaign_id) : "general"} onChange={(e) => onAssign(s.id, e.target.value)}
+                  className="h-6 max-w-[110px] px-1 text-[11.5px]" aria-label={`Campaign for ${s.name}`} title="Move to campaign">
+                  {campaigns.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                  <option value="general">General</option>
+                  <option value="__new">+ New campaign…</option>
+                </Select>
+                <button aria-label="Remove" onClick={() => onRemove(s.id)} className="text-faint opacity-0 hover:text-danger group-hover:opacity-100"><Trash2 className="size-3.5" /></button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
   );
 }
 

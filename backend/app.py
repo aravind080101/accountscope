@@ -144,18 +144,23 @@ def generate_profile(body: ProfileGenIn):
 
 @app.get("/api/profile/sources")
 def seller_sources():
-    return profiles.list_sources()
+    return profiles.list_sources(include_campaigns=True)
 
 
 @app.post("/api/profile/sources")
-async def upload_sources(files: list[UploadFile] = File(...), kind: str = "deck"):
-    """kind=deck: what you sell (offerings). kind=pov: the CEO's/founder's decks, posts and talks (points of view)."""
+async def upload_sources(files: list[UploadFile] = File(...), kind: str = "deck", campaign_id: int | None = None):
+    """kind=deck: what you sell (offerings). kind=pov: the CEO's/founder's decks, posts and talks (points of view).
+    campaign_id files the decks under that campaign instead of the general library."""
     if kind not in ("deck", "pov"):
         raise HTTPException(400, "kind must be deck or pov")
+    if campaign_id is not None:
+        if kind != "deck":
+            raise HTTPException(400, "Only decks can be assigned to a campaign")
+        _campaign(campaign_id)
     added, errors = [], []
     for f in files:
         try:
-            added.append(profiles.add_source(f.filename, kind, profiles.read_file(f.filename, await f.read())))
+            added.append(profiles.add_source(f.filename, kind, profiles.read_file(f.filename, await f.read()), campaign_id=campaign_id))
         except Exception as exc:
             errors.append(f"{f.filename}: {exc}")
     if errors and not added:
@@ -192,6 +197,20 @@ def build_pov():
         raise HTTPException(400, str(exc)) from exc
 
 
+class AssignIn(BaseModel):
+    campaign_id: int | None = None
+
+
+@app.put("/api/profile/sources/{sid}/campaign")
+def assign_source(sid: int, body: AssignIn):
+    try:
+        return profiles.assign_source(sid, body.campaign_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.delete("/api/profile/sources/{sid}")
 def remove_source(sid: int):
     profiles.delete_source(sid)
@@ -203,7 +222,7 @@ def research_seller(body: WebResearchIn):
     if not config.TAVILY_API_KEY:
         raise HTTPException(400, "Web research needs TAVILY_API_KEY")
     added = profiles.research_web([t.model_dump() for t in body.targets if t.name.strip()])
-    return {"added": len(added), "sources": profiles.list_sources()}
+    return {"added": len(added), "sources": profiles.list_sources(include_campaigns=True)}
 
 
 _rescore: dict[int, dict] = {}   # per workspace

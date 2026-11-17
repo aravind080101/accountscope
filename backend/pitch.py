@@ -357,9 +357,22 @@ Proof points (use ONLY these; never invent clients or numbers):
 def _material_block(profile: dict) -> str:
     """Passages from the seller's own decks and documents that match this person's current work."""
     mat = profile.get("_material") or []
+    matches = profile.get("_deck_matches") or []
     if not mat:
         return ""
     body = "\n".join(f"[{m['doc']}] {m['text'][:700]}" for m in mat)
+    if matches:
+        plan = "\n".join(f"- [{m['doc']}] answers their need: {m['company_need']} (evidence: {m['evidence']}). Use: {m['deck_point']}. "
+                          f"Bring it in: {'Message 2 and the full pitch' if m['use_in'] == 'both' else m['use_in'].replace('_', ' ')}."
+                          for m in matches)
+        return f"""
+DECKS MATCHED TO THIS COMPANY'S NEEDS (chosen from the company analysis). Use each deck only for the need it was matched
+to, and only in the message named. Never in the connection note. In Message 1 at most an observation drawn from it, never
+naming the deck, a client or a number. In Message 2 and the full pitch, offer the deck or case study by its topic
+(e.g. "a short write-up on smart-TV playback testing"). Never invent anything the passages don't say.
+{plan}
+Passages from those decks:
+{body}"""
     return f"""
 FROM YOUR DECKS AND DOCUMENTS (passages that match this person's current work). Use them ONLY where they genuinely
 fit what this person needs now; ignore any that don't. In the connection note and Message 1 use them only as
@@ -438,6 +451,68 @@ PERSONALITY (from their own words): {personality}
 INTERESTS they mention themselves: {interests}
 OPENERS (person signals for the connection note; L1 interest, L2 their words, L3 career choice, L4 roots, L5 moment, L6 what they protect):
 {openers}"""
+
+
+DECK_MATCHER = """You are the DECK MATCHER for a B2B seller. You get one target company's analysis (its initiatives, projects,
+tech, recent triggers, the person's priorities and the offering ranked best for them) and the seller's decks and documents.
+Decide WHICH decks align with WHICH of this company's needs. Match on meaning, not shared words: a deck on smart-TV
+device testing fits a company launching on Samsung and LG TVs even if the words differ. A deck fits only when you can name
+the company need it answers AND the evidence for that need in the analysis. Generic capability decks fit only when nothing
+specific does. Never stretch a deck to fit; it is fine to return no matches. Return JSON only."""
+
+
+def match_decks(ctx: dict, brief: dict, trig: dict, ranked: list, catalog: list, candidates: list) -> dict:
+    """Pick the decks that fit this company's needs, with the need, the evidence and where in the sequence to use each."""
+    works = "\n".join(f"- {w['kind']}: {w['name']}: {(w.get('summary') or '')[:200]} (tech: {', '.join(w.get('tech') or [])})"
+                       for w in ctx["works"][:10]) or "- none found"
+    trigs = "\n".join(f"- {t.get('type')}: {t.get('what')} (evidence: {t.get('evidence')})" for t in (trig.get("triggers") or [])[:6]) or "- none"
+    prios = "; ".join(_txt(x) for k in ("priorities", "concerns") for x in (brief.get(k) or [])) or "unknown"
+    best = ", ".join(f"{r['offering']} ({r['score']}/100)" for r in (ranked or [])[:3]) or "not ranked"
+    decks = "\n".join(f"[{c['doc']}] ({c['kind']}) {c['head']}" for c in catalog[:25])
+    passages = "\n".join(f"[{m['doc']}] {m['text'][:500]}" for m in candidates[:8]) or "- none"
+    person = ctx["person"]
+    prompt = f"""TARGET: {person.get('name')}, {person.get('title')} at {person.get('company')} ({person.get('industry') or 'industry unknown'})
+Initiatives and projects:
+{works}
+Recent triggers:
+{trigs}
+This person's priorities and concerns: {prios}
+Tech: {', '.join(ctx['tech'][:12]) or 'unknown'}
+Offerings ranked best for this company: {best}
+
+SELLER DECKS AND DOCUMENTS (name, then how it opens):
+{decks}
+
+PASSAGES THAT SHARE WORDS WITH THE ANALYSIS (hints only; judge by meaning):
+{passages}
+
+Return {{"matches": [{{
+  "doc": exact deck name from the list,
+  "company_need": the specific need at THIS company it answers (name the initiative, launch, system or problem),
+  "evidence": the line from the analysis above that shows the need,
+  "deck_point": what in the deck speaks to that need (a capability, method, or case study topic; no invented numbers),
+  "use_in": "message_2" | "full_pitch" | "both",
+  "strength": 1-10 }}],
+"no_fit_reason": null, or why none of the decks fits this company}}
+Give at most 3 matches, strongest first. Only include matches of strength 6 or more."""
+    out = llm.complete_json(DECK_MATCHER, prompt, 1500) or {}
+    if not isinstance(out, dict) or "matches" not in out:
+        raise ValueError("no deck decision")
+    names = {c["doc"] for c in catalog}
+    matches = []
+    for m in out.get("matches") or []:
+        if not isinstance(m, dict) or m.get("doc") not in names or not m.get("company_need"):
+            continue
+        try:
+            strength = int(m.get("strength") or 0)
+        except (TypeError, ValueError):
+            strength = 0
+        if strength < 6:
+            continue
+        use = m.get("use_in") if m.get("use_in") in ("message_2", "full_pitch", "both") else "both"
+        matches.append({"doc": m["doc"], "company_need": str(m["company_need"])[:300], "evidence": str(m.get("evidence") or "")[:300],
+                        "deck_point": str(m.get("deck_point") or "")[:300], "use_in": use, "strength": strength})
+    return {"matches": matches[:3], "no_fit_reason": out.get("no_fit_reason") if not matches else None}
 
 
 def strategize(ctx: dict, brief: dict, profile: dict, trig: dict | None = None, ranked: list | None = None) -> dict:
@@ -855,12 +930,29 @@ def _run(pitch_id: int) -> None:
                          + [t.get("what", "") for t in trig.get("triggers", [])]
                          + [_txt(x) for k in ("priorities", "concerns") for x in (brief.get(k) or [])]
                          + ctx["tech"][:10] + [ctx["person"].get("industry") or ""])
-        material = profiles.relevant_material(query, campaign_id=campaign_id)
-        if material:
-            profile = {**profile, "_material": material}
-            _log(pitch_id, f"Found {len(material)} matching passage(s) in your decks: {', '.join(sorted({m['doc'] for m in material}))}")
+        deck_matches, deck_no_fit = [], None
+        every = not campaign_id   # general outreach weighs every deck; a campaign pitch only its own
+        catalog = profiles.deck_catalog(campaign_id, every)
+        material = []
+        if catalog:
+            _log(pitch_id, f"Matching your {len(catalog)} deck(s) to {ctx['person']['company']}'s needs")
+            candidates = profiles.relevant_material(query, k=8, min_hits=2, campaign_id=campaign_id, every=every)
+            try:
+                dm = match_decks(ctx, brief, trig, ranked, catalog, candidates)
+                deck_matches, deck_no_fit = dm["matches"], dm["no_fit_reason"]
+                for m in deck_matches:
+                    material += profiles.doc_passages(m["doc"], m["company_need"] + " " + m["deck_point"] + " " + query, campaign_id=campaign_id, every=every)
+                    _log(pitch_id, f"Deck '{m['doc']}' fits their need: {m['company_need']} ({m['strength']}/10)")
+                if not deck_matches:
+                    _log(pitch_id, f"No deck fits {ctx['person']['company']}'s needs" + (f": {deck_no_fit}" if deck_no_fit else ""))
+            except Exception:
+                material = profiles.relevant_material(query, campaign_id=campaign_id, every=every)   # fall back to word matching
+                if material:
+                    _log(pitch_id, f"Found {len(material)} matching passage(s) in your decks: {', '.join(sorted({m['doc'] for m in material}))}")
         else:
-            _log(pitch_id, "Nothing in your decks matches this person's current work closely; using the profile only")
+            _log(pitch_id, "No decks uploaded; using the profile only")
+        if material:
+            profile = {**profile, "_material": material, "_deck_matches": deck_matches}
         _log(pitch_id, "Strategist: finding angles where their world meets what you sell")
         strat = strategize(ctx, brief, profile, trig, ranked)
         angles = strat["angles"]
@@ -942,6 +1034,7 @@ def _run(pitch_id: int) -> None:
                 "dismiss_reasons": trig["dismiss_reasons"], "hooks": hook_sets.get(best["angle"], []), "why": why, "messages": messages, "simulation": best["simulation"],
                 "warmup": seq["warmup"], "end_goal": seq.get("end_goal") or {}, "approach": approach,
                 "sequence_issues": seq_issues, "offering_rank": ranked[:5],
+                "deck_matches": deck_matches, "deck_no_fit": deck_no_fit,
                 "deck_material": [{k: m[k] for k in ("doc", "kind", "matched")} | {"text": m["text"][:400]} for m in material],
                 "openers": brief.get("openers") or [],
                 "rounds": rounds, "objections": objs, "warnings": warnings, "skip_reason": strat.get("skip_reason"),
