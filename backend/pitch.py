@@ -671,7 +671,13 @@ stage by stage, so the conversation builds trust before anything is pitched. Sam
 voice rules (follow HOW THEY COMMUNICATE and their personality). The seller is NEVER named before stage 6 (reveal).
 No calls, meetings or minutes before stage 9. Plain sentences, no lists, no hype, no stats or client counts.
 Never invent facts, clients or numbers; use only the proof points and offers given. Each later stage will be
-adapted to their real reply, so write natural continuations that still read well on their own."""
+adapted to their real reply, so write natural continuations that still read well on their own.
+
+FIRST decide the END GOAL: the one offering this conversation leads to, the specific use case at THEIR company (name
+their initiative, system or rollout and what the seller would do for it), the outcome they'd get, what stage 8 sends
+and what stage 9 asks for. Every stage builds toward it: stages 3-5 explore the problem behind that use case without
+naming the seller; stage 6 names the use case plainly; stage 7 checks interest in exactly that use case; stage 8 sends
+something about it; stage 9 asks for time to work on it."""
 
 
 def lint_sequence(msgs: dict, seller: str = "", profile: dict | None = None) -> list[str]:
@@ -730,17 +736,41 @@ First name: {first}
 STAGES TO WRITE:
 {stages}
 {critique}
-Return {{"warmup": [2-3 things to do BEFORE sending the invite: follow them, a thoughtful comment on a recent post of theirs
+Return {{"end_goal": {{"offering": one offering name from the seller's list, "use_case": one sentence naming their initiative
+  and what the seller would do for it, "outcome": what they get, "deliverable": what stage 8 sends, "ask": what stage 9 asks}},
+"warmup": [2-3 things to do BEFORE sending the invite: follow them, a thoughtful comment on a recent post of theirs
 or their company's, timing the invite to a fresh event], {", ".join(f'"{k}": str' for k in SEQUENCE_KEYS)}}}"""
         out = llm.complete_json(SEQUENCE_WRITER, prompt, 2500)
         out = out if isinstance(out, dict) else {}
         seq = {k: str(out.get(k) or "").strip() for k in SEQUENCE_KEYS}
-        issues = lint_sequence(seq, seller, profile)
+        goal = out.get("end_goal") if isinstance(out.get("end_goal"), dict) else {}
+        issues = lint_sequence(seq, seller, profile) + lint_goal(goal, seq, profile)
         if not issues:
             break
         critique = "\nYOUR LAST DRAFT BROKE THESE RULES, FIX EVERY ONE:\n" + "\n".join(f"- {i}" for i in issues)
     warmup = [str(x) for x in (out.get("warmup") or []) if x][:3]
-    return {"messages": seq, "warmup": warmup}, issues
+    return {"messages": seq, "warmup": warmup, "end_goal": goal}, issues
+
+
+def _goal_words(goal: dict) -> set[str]:
+    stop = {"their", "with", "from", "that", "this", "would", "will", "for", "and", "the", "into", "they", "across", "before", "after"}
+    return {w for w in re.findall(r"[a-z][a-z0-9-]{3,}", (goal.get("use_case") or "").lower()) if w not in stop}
+
+
+def lint_goal(goal: dict, seq: dict, profile: dict | None = None) -> list[str]:
+    """The conversation must lead somewhere specific: a named offering for a named use case at their company."""
+    issues = []
+    if not goal.get("use_case") or not goal.get("offering"):
+        return ["Decide the END GOAL first: which offering, for which of their initiatives (use_case)."]
+    names = [o["name"].lower() for o in (profile or {}).get("offerings", [])]
+    if names and goal["offering"].lower() not in names:
+        issues.append(f"END GOAL offering '{goal['offering']}' is not one of the seller's offerings: pick one of {', '.join(names)}.")
+    words = _goal_words(goal)
+    for k in ("reveal", "interest_check", "specific_ask"):
+        if words and not (words & set(re.findall(r"[a-z][a-z0-9-]{3,}", seq.get(k, "").lower()))):
+            issues.append(f"{dict((x[0], x[1]) for x in SEQUENCE)[k]} doesn't mention the use case "
+                          f"({goal['use_case'][:80]}). Name it plainly.")
+    return issues
 
 
 # ------------------------------------------------------------------ 6. objections
@@ -895,7 +925,8 @@ def _run(pitch_id: int) -> None:
             warnings.append(f"Best draft scored {best['simulation']['overall']:g}/10 against a pass mark of {PASS_SCORE:g}. Review before sending.")
         data = {"angle": angles[best["angle"]], "angles": angles, "triggers": trig["triggers"],
                 "dismiss_reasons": trig["dismiss_reasons"], "hooks": hook_sets.get(best["angle"], []), "why": why, "messages": messages, "simulation": best["simulation"],
-                "warmup": seq["warmup"], "approach": approach, "sequence_issues": seq_issues, "offering_rank": ranked[:5],
+                "warmup": seq["warmup"], "end_goal": seq.get("end_goal") or {}, "approach": approach,
+                "sequence_issues": seq_issues, "offering_rank": ranked[:5],
                 "deck_material": [{k: m[k] for k in ("doc", "kind", "matched")} | {"text": m["text"][:400]} for m in material],
                 "openers": brief.get("openers") or [],
                 "rounds": rounds, "objections": objs, "warnings": warnings, "skip_reason": strat.get("skip_reason"),

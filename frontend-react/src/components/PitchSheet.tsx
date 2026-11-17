@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as D from "@radix-ui/react-dialog";
 import { toast } from "sonner";
-import { Check, ChevronDown, Copy, Crosshair, FileText, Flame, Lightbulb, Loader2, MessageSquareQuote, RefreshCw, ShieldAlert, Swords, Target, Wand2 } from "lucide-react";
+import { Check, ChevronDown, Copy, Crosshair, FileText, Flame, Lightbulb, Loader2, MessageSquareQuote, RefreshCw, ShieldAlert, Swords, Target, Wand2, Mail, ExternalLink } from "lucide-react";
 import { api, post } from "@/lib/api";
 import { confirmCost } from "@/components/CostConfirm";
 import { cn } from "@/lib/utils";
@@ -53,6 +53,13 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
     catch (e: any) { toast.error(e.message); }
   };
   const copy = (t: string) => { navigator.clipboard?.writeText(t); toast.success("Copied"); };
+  const [enriching, setEnriching] = useState(false);
+  const getEmail = async () => {
+    if (!(await confirmCost(`/api/people/${pid}/cost?action=enrich`, `Get ${person.full_name}'s email and LinkedIn?`, "Get email"))) return;
+    setEnriching(true);
+    try { await post(`/api/people/${pid}/enrich`); toast.success("Contact revealed"); await load(p?.id); onChanged?.(); }
+    catch (e: any) { toast.error(e.message); } finally { setEnriching(false); }
+  };
   const busy = p && (p.status === "queued" || p.status === "running");
   const d = p?.data || {};
   const sim = d.simulation || {};
@@ -85,7 +92,29 @@ export function PitchSheet({ person, onClose, onChanged }: { person: any; onClos
                 {d.research?.voice?.samples > 0 ? <Badge tone="green">Written in their voice</Badge> : <Badge tone="saffron">Neutral tone (voice unknown)</Badge>}
                 <Button size="xs" variant="ghost" className="ml-auto" onClick={start}><RefreshCw />Regenerate</Button>
               </div>
-              {d.warnings?.length > 0 && <ul className="space-y-1 rounded-md bg-saffron-soft px-3 py-2 text-[12.5px] text-saffron-ink">{d.warnings.map((w: string) => <li key={w}>{w}</li>)}</ul>}
+              {(
+                <div className="flex flex-wrap items-center gap-3 text-[12.5px]">
+                  {p.email && <a className="inline-flex items-center gap-1 text-sponsor hover:underline" href={`mailto:${p.email}`}><Mail className="size-3.5" />{p.email}</a>}
+                  {p.linkedin_url && <a className="inline-flex items-center gap-1 text-sponsor hover:underline" href={p.linkedin_url} target="_blank" rel="noreferrer"><ExternalLink className="size-3.5" />LinkedIn</a>}
+                  {(!p.email || !p.linkedin_url) && <Button size="xs" variant="outline" disabled={enriching} onClick={getEmail}>{enriching ? <Loader2 className="animate-spin" /> : <Mail />}Get email{!p.linkedin_url ? " & LinkedIn" : ""}</Button>}
+                </div>)}
+              {d.warnings?.length > 0 && <ul className="space-y-1 rounded-md bg-saffron-soft px-3 py-2 text-[12.5px] text-saffron-ink">{d.warnings
+                .filter((w: string) => !(p.linkedin_url && /No LinkedIn URL/i.test(w))).map((w: string) => <li key={w}>{w}</li>)}</ul>}
+
+              {/* where the conversation is heading */}
+              {d.end_goal?.use_case && (
+                <section className="rounded-lg border border-ink/15 bg-white p-4">
+                  <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-muted"><Crosshair className="size-3.5" />Where this conversation is heading</div>
+                  <p className="text-[15px] font-semibold leading-snug">{d.end_goal.use_case}</p>
+                  <dl className="mt-3 grid gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2">
+                    <div><dt className="text-[11.5px] text-muted">Offering</dt><dd className="font-medium">{d.end_goal.offering}</dd></div>
+                    {d.end_goal.outcome && <div><dt className="text-[11.5px] text-muted">What they get</dt><dd>{d.end_goal.outcome}</dd></div>}
+                    {d.end_goal.deliverable && <div><dt className="text-[11.5px] text-muted">Message 8 sends</dt><dd>{d.end_goal.deliverable}</dd></div>}
+                    {d.end_goal.ask && <div><dt className="text-[11.5px] text-muted">Message 9 asks for</dt><dd>{d.end_goal.ask}</dd></div>}
+                  </dl>
+                  <p className="mt-2 text-[11.5px] text-faint">Messages 1-5 build the conversation without selling; 6 names this use case, 7-9 move it to a meeting.</p>
+                </section>
+              )}
               {!d.research?.first_hand && (String(p.full_name || person.full_name).includes("*")
                 ? <p className="rounded-md border border-dashed border-line px-3 py-2 text-[12.5px] text-muted">Their surname is hidden, so their posts can't be matched to them yet. Click <b>Get email</b> on their contact first, then paste their posts here and regenerate.</p>
                 : <Samples pid={pid} onChange={start} busy={!!busy} actionLabel="Regenerate pitch with these" startOpen />)}

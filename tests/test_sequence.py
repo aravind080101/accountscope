@@ -179,3 +179,17 @@ def test_leadership_check_retires_people_recent_sources_say_have_left(monkeypatc
         a = s.execute("SELECT current, left_note FROM person WHERE id=?", (old,)).fetchone()
         b = s.execute("SELECT current FROM person WHERE id=?", (new,)).fetchone()
     assert res["changed"] == 1 and a["current"] == 0 and "Succeeded by Ben Kurian" in a["left_note"] and b["current"] != 0
+
+
+def test_conversation_must_lead_to_a_named_use_case():
+    profile = {"offerings": [{"name": "Migration testing"}]}
+    seq = {"reveal": "I work on testing at Moolya. How are you approaching the net banking migration?",
+           "interest_check": "Worth comparing notes on the net banking migration?",
+           "specific_ask": "Would 15 minutes on Thursday work to go through the migration cutover plan?"}
+    goal = {"offering": "Migration testing", "use_case": "Testing the net banking migration of beneficiaries and limits"}
+    assert pitch.lint_goal(goal, seq, profile) == []
+    assert "END GOAL" in pitch.lint_goal({}, seq, profile)[0]
+    assert "isn't" not in " ".join(pitch.lint_goal({**goal, "offering": "Game testing"}, seq, profile))
+    assert any("not one of the seller's offerings" in i for i in pitch.lint_goal({**goal, "offering": "Game testing"}, seq, profile))
+    vague = dict(seq, specific_ask="Would 15 minutes on Thursday work for a quick chat?")
+    assert any("9 · Specific ask" in i for i in pitch.lint_goal(goal, vague, profile))

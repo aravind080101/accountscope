@@ -4,6 +4,7 @@ import io
 from fastapi.testclient import TestClient
 
 from backend import app as app_module, db, profiles
+OFFERING = profiles.MOOLYA_PROFILE["offerings"][0]["name"]
 from tests.test_features import install_fakes
 
 client = TestClient(app_module.app, headers={"X-Requested-With": "accountscope"})
@@ -188,14 +189,17 @@ def test_pitch_agent_loops_until_the_buyer_would_reply(monkeypatch):
                 return {"warmup": ["Follow Ravi"], "mirror": "Moolya can help. Can we do a 20 minute call?", "advice": "", "give": "x",
                         "reveal": "x", "interest_check": "x", "contact": "x", "specific_ask": "x"}
             assert "BROKE THESE RULES" in prompt and "before stage 6" in prompt
-            return {"warmup": ["Follow Ravi", "Comment on the CoreSoft go-live post"],
+            return {"end_goal": {"offering": OFFERING, "use_case": "Cutover testing for the CoreSoft loan migration",
+                                 "outcome": "no loan schedules break at go-live", "deliverable": "cutover checklist",
+                                 "ask": "15 minutes on the cutover plan"},
+                    "warmup": ["Follow Ravi", "Comment on the CoreSoft go-live post"],
                     "mirror": "That makes sense. Mid-cycle loans are where the old and new cores disagree. Which product line worries you most?",
                     "advice": "You've run two core moves before. What would you do differently on this one?",
                     "give": "One pattern I keep seeing: totals reconcile but per-loan schedules drift after backdated changes. Useful?",
                     "reveal": "Fair question. I work on testing at Zen QA, mostly migrations like this. How is your team splitting the cutover tests?",
                     "interest_check": "Worth comparing notes on how you're approaching the cutover?",
                     "contact": "I have a one-page cutover checklist that reads better as a PDF. What's the best email to send it to?",
-                    "specific_ask": "Would 15 minutes on Thursday at 4pm work to walk through it against your plan?"}
+                    "specific_ask": "Would 15 minutes on Thursday at 4pm work to walk through the cutover against your plan?"}
         if "OBJECTIONS" in system:
             return {"objections": [{"objection": "We have in-house QA", "likelihood": "high",
                                     "responses": [{"label": "Complement", "reply": "Makes sense..."}]}]}
@@ -214,6 +218,7 @@ def test_pitch_agent_loops_until_the_buyer_would_reply(monkeypatch):
     assert d["triggers"][0]["type"] == "commitment" and d["why"]["still_open"][0]["refute"] == "SI already owns testing"
     assert seen["seq"] == 2 and d["messages"]["contact"].endswith("send it to?") and not d["sequence_issues"]   # stages 3-9 rewritten until clean
     assert d["warmup"] == ["Follow Ravi", "Comment on the CoreSoft go-live post"]
+    assert d["end_goal"]["use_case"].startswith("Cutover testing")
 
     edited = client.put(f"/api/pitches/{p['id']}", json={"messages": {"message_1": "Edited.", "message_3": "ignored"}, "status": "approved"}).json()
     assert edited["data"]["messages"]["message_1"] == "Edited." and "message_3" not in edited["data"]["messages"] and edited["status"] == "approved"
