@@ -171,7 +171,7 @@ function Sidebar({ route, accounts, unread, health, me, onCmd, onAdd, onSettings
           {health ? (health.configured ? `${health.llm_provider === "openai" ? "GPT" : "Claude"} · Tavily${health.people_search ? " · Apollo" : ""}` : "Setup needed") : "…"}
         </div>
         <button onClick={onSettings} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-ink-2">
-          {health?.seller ? <CompanyLogo name={health.seller} domain={health.seller_domain} size={16} className="!rounded-[4px] !border-0 !p-[1px]" />
+          {health?.seller ? <SellerLogo name={health.seller} domain={health.seller_domain} size={16} />
             : <Settings2 className="size-3.5 text-rail-muted" />}<span className="text-rail-muted">Selling as</span><b className="truncate font-semibold text-white">{health?.seller || "…"}</b>
         </button>
         {me?.user && <AccountMenu me={me} seller={health?.seller} sellerDomain={health?.seller_domain} onPassword={onPassword} onSignOut={onSignOut} onSwitched={onSwitched} />}
@@ -221,6 +221,14 @@ function AddDialog({ mode, onClose, onDone }: { mode: null | "one" | "list"; onC
 
 
 
+/** Your own company's logo: Moolya's brand mark when selling as Moolya, otherwise the website's logo. */
+function SellerLogo({ name, domain, size }: { name: string; domain?: string | null; size: number }) {
+  if (/moolya/i.test(`${name} ${domain || ""}`))
+    return <img src="/moolya-logo.png" alt="Moolya" title={name} width={size} height={size}
+      className="inline-block shrink-0 rounded-md bg-white object-contain" style={{ width: size, height: size }} />;
+  return <CompanyLogo name={name} domain={domain} size={size} className="!border-0" />;
+}
+
 function AccountMenu({ me, seller, sellerDomain, onPassword, onSignOut, onSwitched }: any) {
   const u = me.user; const admin = u.is_superadmin || u.role === "admin";
   const switchTo = async (w: any) => { try { await post("/api/auth/switch", { workspace_id: w.id }); toast.success(`Now in ${w.name}`); go("/"); onSwitched(); } catch (e: any) { toast.error(e.message); } };
@@ -228,7 +236,7 @@ function AccountMenu({ me, seller, sellerDomain, onPassword, onSignOut, onSwitch
     <Menu>
       <MenuTrigger asChild>
         <button className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-ink-2">
-          {sellerDomain ? <CompanyLogo name={seller || me.workspace?.name || ""} domain={sellerDomain} size={28} className="!border-0" />
+          {sellerDomain ? <SellerLogo name={seller || me.workspace?.name || ""} domain={sellerDomain} size={30} />
             : <Avatar name={u.name || u.email} size={24} className="!bg-white/10 !text-white" />}
           <div className="min-w-0 flex-1"><div className="truncate text-[12.5px] font-medium text-white">{u.name || u.email}</div>
             <div className="truncate text-[11px] text-rail-muted">{me.workspace?.name}{u.is_superadmin ? " · owner" : u.role === "admin" ? " · admin" : ""}</div></div>
