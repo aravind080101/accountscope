@@ -4,6 +4,7 @@ import hmac
 from contextlib import asynccontextmanager
 import io
 import json
+import re
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
@@ -102,6 +103,28 @@ def _seller_name():
         return None
 
 
+def _seller_domain():
+    """The seller's website, for its logo: the profile's domain, else one of its own web sources, else <name>.com."""
+    try:
+        prof = profiles.load()
+    except RuntimeError:
+        return None
+    d = (prof.get("domain") or prof.get("website") or "").strip()
+    name = (prof.get("company") or "").strip()
+    if not d and name:
+        first = re.sub(r"[^a-z0-9]", "", name.lower().split()[0])
+        try:
+            for src in profiles.list_sources():
+                host = re.sub(r"^https?://(www\.)?", "", src.get("url") or "").split("/")[0].lower()
+                if first and host.startswith(first + "."):
+                    d = host
+                    break
+        except Exception:
+            pass
+        d = d or (f"{first}.com" if first else "")
+    return re.sub(r"^https?://(www\.)?", "", d).split("/")[0] or None
+
+
 @app.get("/api/health")
 def health():
     missing = []
@@ -115,6 +138,7 @@ def health():
         "missing_keys": missing,
         "people_search": apollo.available(),
         "seller": _seller_name(),
+        "seller_domain": _seller_domain(),
         "builtwith": bool(config.BUILTWITH_API_KEY),
         "cloud": config.RUNNING_IN_CLOUD,
     }

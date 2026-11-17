@@ -22,7 +22,7 @@ import TeamPage from "@/pages/Team";
 import WorkspacesPage from "@/pages/Workspaces";
 import { ForcePasswordPage, LoginPage, PasswordDialog, SetupPage, signOut } from "@/pages/Auth";
 
-export type Health = { configured: boolean; missing_keys: string[]; llm_provider: string | null; people_search: boolean; seller: string };
+export type Health = { configured: boolean; missing_keys: string[]; llm_provider: string | null; people_search: boolean; seller: string; seller_domain?: string | null };
 
 /** Decides between sign-in, first-time setup, forced password change, and the app itself. */
 export default function App() {
@@ -171,9 +171,10 @@ function Sidebar({ route, accounts, unread, health, me, onCmd, onAdd, onSettings
           {health ? (health.configured ? `${health.llm_provider === "openai" ? "GPT" : "Claude"} · Tavily${health.people_search ? " · Apollo" : ""}` : "Setup needed") : "…"}
         </div>
         <button onClick={onSettings} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-ink-2">
-          <Settings2 className="size-3.5 text-rail-muted" /><span className="text-rail-muted">Selling as</span><b className="truncate font-semibold text-white">{health?.seller || "…"}</b>
+          {health?.seller ? <CompanyLogo name={health.seller} domain={health.seller_domain} size={16} className="!rounded-[4px] !border-0 !p-[1px]" />
+            : <Settings2 className="size-3.5 text-rail-muted" />}<span className="text-rail-muted">Selling as</span><b className="truncate font-semibold text-white">{health?.seller || "…"}</b>
         </button>
-        {me?.user && <AccountMenu me={me} onPassword={onPassword} onSignOut={onSignOut} onSwitched={onSwitched} />}
+        {me?.user && <AccountMenu me={me} seller={health?.seller} sellerDomain={health?.seller_domain} onPassword={onPassword} onSignOut={onSignOut} onSwitched={onSwitched} />}
       </div>
     </aside>
   );
@@ -220,14 +221,15 @@ function AddDialog({ mode, onClose, onDone }: { mode: null | "one" | "list"; onC
 
 
 
-function AccountMenu({ me, onPassword, onSignOut, onSwitched }: any) {
+function AccountMenu({ me, seller, sellerDomain, onPassword, onSignOut, onSwitched }: any) {
   const u = me.user; const admin = u.is_superadmin || u.role === "admin";
   const switchTo = async (w: any) => { try { await post("/api/auth/switch", { workspace_id: w.id }); toast.success(`Now in ${w.name}`); go("/"); onSwitched(); } catch (e: any) { toast.error(e.message); } };
   return (
     <Menu>
       <MenuTrigger asChild>
         <button className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-ink-2">
-          <Avatar name={u.name || u.email} size={24} className="!bg-white/10 !text-white" />
+          {sellerDomain ? <CompanyLogo name={seller || me.workspace?.name || ""} domain={sellerDomain} size={28} className="!border-0" />
+            : <Avatar name={u.name || u.email} size={24} className="!bg-white/10 !text-white" />}
           <div className="min-w-0 flex-1"><div className="truncate text-[12.5px] font-medium text-white">{u.name || u.email}</div>
             <div className="truncate text-[11px] text-rail-muted">{me.workspace?.name}{u.is_superadmin ? " · owner" : u.role === "admin" ? " · admin" : ""}</div></div>
           <ChevronsUpDown className="size-3.5 text-rail-muted" />

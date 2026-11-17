@@ -135,3 +135,11 @@ def test_deck_matcher_keeps_only_real_decks_that_answer_a_named_need(monkeypatch
     assert out["matches"][0]["use_in"] == "message_2"
     block = pitch._material_block({"_material": [{"doc": "Moolya_Device_Lab.pdf", "text": "Real TVs"}], "_deck_matches": out["matches"]})
     assert "answers their need: Smart TV launch" in block and "Never in the connection note" in block
+
+
+def test_health_gives_the_seller_domain_for_its_logo(monkeypatch):
+    c = _client(monkeypatch)
+    h = c.get("/api/health").json()
+    assert h["seller"] and h["seller_domain"] and "/" not in h["seller_domain"]
+    if h["seller"].lower().startswith("moolya"):
+        assert h["seller_domain"] == "moolya.com"
