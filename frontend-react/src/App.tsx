@@ -5,7 +5,7 @@ import { Bell, Building, Building2, ChevronsUpDown, Command as CmdIcon, Compass,
 import { api, post } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { go, useApi, useRoute } from "@/lib/hooks";
-import { TooltipProvider, Avatar, Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/misc";
+import { TooltipProvider, Avatar, Menu, MenuContent, MenuItem, MenuTrigger, CompanyLogo } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input, Textarea, Label } from "@/components/ui/input";
@@ -104,7 +104,7 @@ function Workspace({ me, onAuthChange, onSignOut }: { me: any; onAuthChange: () 
           <CommandGroup heading="Accounts">
             {accounts.map((a) => (
               <CommandItem key={a.id} value={`${a.name} ${a.domain || ""} ${a.industry || ""}`} onSelect={() => { setCmdOpen(false); go(`/a/${a.id}`); }}>
-                <Avatar name={a.name} size={20} square /><span className="flex-1">{a.name}</span><span className="text-xs text-faint">{a.industry}</span>
+                <CompanyLogo name={a.name} domain={a.domain} size={20} /><span className="flex-1">{a.name}</span><span className="text-xs text-faint">{a.industry}</span>
               </CommandItem>
             ))}
           </CommandGroup>
@@ -157,7 +157,7 @@ function Sidebar({ route, accounts, unread, health, me, onCmd, onAdd, onSettings
           const busy = a.status === "queued" || a.status === "running";
           return (
             <a key={a.id} href={`#/a/${a.id}`} className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-ink-2", route.id === a.id && route.page === "company" && "bg-ink-3")}>
-              <Avatar name={a.name} size={20} square className="!bg-white/10 !text-white" />
+              <CompanyLogo name={a.name} domain={a.domain} size={20} className="!border-white/10" />
               <span className="flex-1 truncate text-white/90">{a.name}</span>
               {busy ? <Loader2 className="size-3.5 animate-spin text-saffron" /> : a.unread ? <span className="size-1.5 rounded-full bg-saffron" /> : a.status === "failed" ? <span className="size-1.5 rounded-full bg-[#e0735f]" /> : null}
             </a>

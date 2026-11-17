@@ -7,7 +7,7 @@ import { go } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input, Label, Select } from "@/components/ui/input";
-import { Avatar, Checkbox, Empty } from "@/components/ui/misc";
+import { Avatar, Checkbox, Empty, CompanyLogo } from "@/components/ui/misc";
 import { Segmented } from "@/components/ui/tabs";
 import { LocationPicker } from "@/components/LocationPicker";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
@@ -91,7 +91,7 @@ export default function DiscoverPage({ refresh }: any) {
                     <tbody>{hits.map((h) => (
                       <Tr key={h.name}>
                         <Td className="pl-4"><Checkbox checked={!!picked[h.name]} disabled={!!h.account_id} onCheckedChange={() => toggle(h)} /></Td>
-                        <Td><div className="flex items-center gap-2.5"><Avatar name={h.name} size={26} square /><div><div className="font-medium">{h.name}</div><div className="text-[12px] text-faint">{[h.location || h.country, h.domain].filter(Boolean).join(" · ")}</div></div></div></Td>
+                        <Td><div className="flex items-center gap-2.5"><CompanyLogo name={h.name} domain={h.domain} size={26} /><div><div className="font-medium">{h.name}</div><div className="text-[12px] text-faint">{[h.location || h.country, h.domain].filter(Boolean).join(" · ")}</div></div></div></Td>
                         <Td className="max-w-[460px]">{h.signal}</Td>
                         <Td className="max-w-[220px] text-[12px]">{h.source_url && <a className="inline-flex items-center gap-1 text-muted hover:text-fg" href={h.source_url} target="_blank" rel="noreferrer"><span className="line-clamp-1">{h.source_title || "Source"}</span><ExternalLink className="size-3 shrink-0" /></a>}<div className="text-faint">{h.published_at}</div></Td>
                         <Td className="pr-4">{h.account_id && <Button variant="ghost" size="xs" onClick={() => go(`/a/${h.account_id}`)}>Researched</Button>}</Td>
@@ -120,7 +120,7 @@ export default function DiscoverPage({ refresh }: any) {
                 <Table><thead><tr><Th className="w-10 pl-4"></Th><Th>Company</Th><Th>Industry</Th><Th className="text-right">Employees</Th><Th>Location</Th><Th className="pr-4"></Th></tr></thead>
                   <tbody>{browse.companies.map((c: any) => (
                     <Tr key={c.name}><Td className="pl-4"><Checkbox checked={!!picked[c.name]} disabled={!!c.account_id} onCheckedChange={() => toggle(c)} /></Td>
-                      <Td><div className="flex items-center gap-2.5"><Avatar name={c.name} size={26} square /><div><div className="font-medium">{c.name}</div><div className="text-[12px] text-faint">{c.domain}</div></div></div></Td>
+                      <Td><div className="flex items-center gap-2.5"><CompanyLogo name={c.name} domain={c.domain} size={26} /><div><div className="font-medium">{c.name}</div><div className="text-[12px] text-faint">{c.domain}</div></div></div></Td>
                       <Td>{c.industry}</Td><Td className="text-right tabular-nums">{c.employees ? Number(c.employees).toLocaleString() : ""}</Td>
                       <Td>{[c.city, c.country].filter(Boolean).join(", ")}</Td>
                       <Td className="pr-4">{c.account_id && <Button variant="ghost" size="xs" onClick={() => go(`/a/${c.account_id}`)}>Researched</Button>}</Td></Tr>))}</tbody></Table>

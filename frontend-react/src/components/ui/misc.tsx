@@ -64,3 +64,35 @@ export function Empty({ icon, title, children, action }: { icon?: React.ReactNod
     </div>
   );
 }
+
+/** "https://www.CUB.bank.in/about" -> "cub.bank.in"; empty when there's nothing usable. */
+export function cleanDomain(domain?: string | null): string {
+  const d = (domain || "").trim().toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/^www\./, "").split(/[/?#]/)[0];
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d) ? d : "";
+}
+
+const LOGO_SOURCES = (d: string) => [
+  `https://www.google.com/s2/favicons?domain=${d}&sz=128`,   // free, no key; a 16px globe means "no logo"
+  `https://icons.duckduckgo.com/ip3/${d}.ico`,               // free fallback; 404 when there's none
+];
+const failedLogos = new Set<string>();   // don't retry a logo that already failed this session
+
+/** The company's logo from its domain, falling back to initials when no real logo is found. */
+export function CompanyLogo({ name, domain, size = 28, className }: { name: string; domain?: string | null; size?: number; className?: string }) {
+  const d = cleanDomain(domain);
+  const sources = d ? LOGO_SOURCES(d) : [];
+  const [i, setI] = React.useState(0);
+  React.useEffect(() => setI(0), [d]);
+  let k = i;
+  while (k < sources.length && failedLogos.has(d + k)) k++;
+  const src = sources[k];
+  if (!src) return <Avatar name={name} size={size} square className={className} />;
+  const next = () => { failedLogos.add(d + k); setI(k + 1); };
+  return (
+    <img src={src} alt="" width={size} height={size} loading="lazy" referrerPolicy="no-referrer" title={name}
+      onError={next}
+      onLoad={(e) => { if (k === 0 && e.currentTarget.naturalWidth <= 16) next(); }}   // Google's 16px globe = no logo
+      className={cn("inline-block shrink-0 rounded-md border border-line bg-white object-contain p-[2px]", className)}
+      style={{ width: size, height: size }} />
+  );
+}

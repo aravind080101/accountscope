@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input, Label, Select } from "@/components/ui/input";
-import { Avatar, Checkbox, Empty, Tooltip } from "@/components/ui/misc";
+import { Avatar, Checkbox, Empty, Tooltip, CompanyLogo } from "@/components/ui/misc";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { LocationPicker } from "@/components/LocationPicker";
 import { confirmCost } from "@/components/CostConfirm";
@@ -179,7 +179,7 @@ function CampaignDetail({ id, refresh }: { id: number; refresh: () => void }) {
                   <tbody>{hits.map((h) => (
                     <Tr key={h.name}>
                       <Td className="pl-4"><Checkbox checked={!!picked[h.name]} disabled={h.in_campaign} onCheckedChange={() => setPicked((s) => { const x = { ...s }; if (x[h.name]) delete x[h.name]; else x[h.name] = h; return x; })} /></Td>
-                      <Td><div className="flex items-center gap-2.5"><Avatar name={h.name} size={26} square /><div><div className="font-medium">{h.name}{h.in_campaign && <Badge tone="green" className="ml-1.5">In campaign</Badge>}{h.account_id && !h.in_campaign && <Badge tone="outline" className="ml-1.5">Researched</Badge>}</div>
+                      <Td><div className="flex items-center gap-2.5"><CompanyLogo name={h.name} domain={h.domain} size={26} /><div><div className="font-medium">{h.name}{h.in_campaign && <Badge tone="green" className="ml-1.5">In campaign</Badge>}{h.account_id && !h.in_campaign && <Badge tone="outline" className="ml-1.5">Researched</Badge>}</div>
                         <div className="text-[12px] text-faint">{[h.location || h.country, h.domain].filter(Boolean).join(" · ")}</div></div></div></Td>
                       <Td className="max-w-[460px]">{h.signal}{h.matched?.length > 1 && <div className="mt-0.5 text-[11.5px] text-faint">Matched {h.matched.length} searches</div>}</Td>
                       <Td className="max-w-[220px] text-[12px]">{h.source_url && <a className="inline-flex items-center gap-1 text-muted hover:text-fg" href={h.source_url} target="_blank" rel="noreferrer"><span className="line-clamp-1">{h.source_title || "Source"}</span><ExternalLink className="size-3 shrink-0" /></a>}<div className="text-faint">{h.published_at}</div></Td>
@@ -195,7 +195,7 @@ function CampaignDetail({ id, refresh }: { id: number; refresh: () => void }) {
             <Table><thead><tr><Th className="pl-4">Company</Th><Th>Why it's in the campaign</Th><Th>Research</Th><Th className="text-right">Pitches</Th><Th className="pr-4" /></tr></thead>
               <tbody>{c.accounts.map((a: any) => (
                 <Tr key={a.company_id}>
-                  <Td className="pl-4"><a href={`#/a/${a.company_id}`} className="flex items-center gap-2.5 hover:underline"><Avatar name={a.name} size={24} square /><span className="font-medium">{a.name}</span></a></Td>
+                  <Td className="pl-4"><a href={`#/a/${a.company_id}`} className="flex items-center gap-2.5 hover:underline"><CompanyLogo name={a.name} domain={a.domain} size={24} /><span className="font-medium">{a.name}</span></a></Td>
                   <Td className="max-w-[420px] text-[12.5px] text-muted">{a.signal}</Td>
                   <Td>{a.status === "done" ? <Badge tone="green">Ready</Badge> : a.status === "failed" ? <Badge tone="red">Failed</Badge> : a.status ? <Badge tone="saffron"><Loader2 className="size-3 animate-spin" />{a.status}</Badge> : <Badge tone="outline">Not researched</Badge>}</Td>
                   <Td className="text-right tabular-nums">{a.pitches}</Td>

@@ -5,7 +5,7 @@ import { go } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import { Badge, ROLE_TONE } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Avatar, Empty, FitPill } from "@/components/ui/misc";
+import { Avatar, Empty, FitPill, CompanyLogo } from "@/components/ui/misc";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 
 type SortKey = "name" | "fit" | "projects" | "clientprojects" | "researched";
@@ -90,7 +90,7 @@ export default function AccountsPage({ accounts, openAdd }: any) {
                   <Tr key={a.id} className="cursor-pointer" onClick={() => go(`/a/${a.id}`)}>
                     <Td className="pl-6">
                       <div className="flex items-center gap-2.5">
-                        <Avatar name={a.name} size={26} square />
+                        <CompanyLogo name={a.name} domain={a.domain} size={26} />
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 font-medium">{a.name}
                             {a.watch ? <Eye className="size-3.5 text-faint" aria-label="Watched" /> : null}

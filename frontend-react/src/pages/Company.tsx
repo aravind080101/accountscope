@@ -9,7 +9,7 @@ import { cn, day, pct, SOURCE_LABEL, STAGES, STAGE_LABEL, ALERT_LABEL } from "@/
 import { go, useApi } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import { Badge, ROLE_TONE } from "@/components/ui/badge";
-import { Avatar, Empty, FitPill, Menu, MenuContent, MenuItem, MenuTrigger, Meter, Skeleton, Tooltip } from "@/components/ui/misc";
+import { Avatar, Empty, FitPill, Menu, MenuContent, MenuItem, MenuTrigger, Meter, Skeleton, Tooltip, CompanyLogo } from "@/components/ui/misc";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { PitchSheet } from "@/components/PitchSheet";
@@ -44,7 +44,7 @@ export default function CompanyPage({ id, tab, refresh, health }: any) {
           <a href="#/" className="hover:text-fg">Accounts</a><ChevronRight className="size-3" /><span className="text-muted">{c.name}</span>
         </div>
         <div className="mt-3 flex items-start gap-3.5">
-          <Avatar name={c.name} size={44} square />
+          <CompanyLogo name={c.name} domain={c.domain} size={44} />
           <div className="min-w-0 flex-1">
             <h1 className="text-[22px] font-semibold leading-tight tracking-tight">{c.name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted">
