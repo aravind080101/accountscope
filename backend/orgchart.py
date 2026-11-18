@@ -72,7 +72,7 @@ def _match_manager(ref: str, people: list[dict], me: dict) -> dict | None:
         return None
     ref_l = ref.lower().strip()
     for p in people:
-        if p is not me and p["full_name"].lower() == ref_l:
+        if p is not me and (p["full_name"] or "").lower() == ref_l:
             return p
     rw = _words(ref) - {"the", "of", "and"}
     best = None

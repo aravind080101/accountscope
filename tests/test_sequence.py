@@ -227,3 +227,20 @@ def test_hooks_rank_an_interest_above_a_company_line(monkeypatch):
     monkeypatch.setattr(pitch.llm, "complete_json", fake)
     got = pitch.hooks(ctx, brief, {}, {"triggers": []})
     assert "marathon" in got[0]["line"] and got[0]["uses_interest"]
+
+
+def test_empty_ai_fields_never_crash_the_checks():
+    """The AI sometimes returns null for a message, a hook's text or an offering name ('NoneType' has no attribute 'lower')."""
+    brief = {"openers": [{"level": "L1", "text": None, "source": 0}, None],
+             "personality": {"interests": [{"text": None}, "chess club"]}}
+    profile = {"company": "Moolya", "offerings": [{"name": None}, {"name": "OTT & Streaming Quality Engineering"}]}
+    msgs = {"connection_note": None, "message_1": None}
+    assert any("empty" in i for i in pitch.lint(msgs, None, None, brief, profile))
+    assert any("empty" in i for i in pitch.lint_sequence({"message_2": None, "full_pitch": ["a", None]}, None, profile))
+    assert pitch.lint_goal({"offering": None, "use_case": "x"}, {}, profile)
+    assert pitch.lint_goal({"offering": "OTT & Streaming Quality Engineering", "use_case": "TV launch"},
+                           {"message_2": None, "full_pitch": None}, profile)
+    ctx = {"person": {"full_name": "A B", "company": None, "title": "CTO"}, "works": [{"name": None, "tech": [None]}],
+           "tech": [None], "vendors": [{"name": None}]}
+    assert isinstance(pitch._specific_terms(ctx, brief), set)
+    assert pitch._interest_terms(brief) == {"chess"}

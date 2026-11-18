@@ -277,7 +277,7 @@ Styles:
 {styles}
 
 Return {{"hooks": [{{"style": style key, "line": the opening line}}]}}""", 1200)
-        cands = [h for h in (out.get("hooks") or []) if isinstance(h, dict) and h.get("line")][:8]
+        cands = [h for h in (out.get("hooks") or []) if isinstance(h, dict) and isinstance(h.get("line"), str) and h["line"].strip()][:8]
     except Exception:
         return []
     if not cands:
@@ -634,14 +634,19 @@ def _specific_terms(ctx: dict, brief: dict | None = None) -> set[str]:
     and the person signals (interests, career, roots, moments) found in their brief."""
     words = set()
     for o in (brief or {}).get("openers") or []:
-        words |= {x.lower() for x in re.findall(r"[A-Za-z][A-Za-z0-9+.-]{4,}", o.get("text", ""))}
-    for t in ctx["tech"] + [x for w in ctx["works"] for x in w["tech"]]:
-        words.add(t.lower())
-    for w in ctx["works"]:
-        words |= {x.lower() for x in re.findall(r"[A-Za-z][A-Za-z0-9+.-]{3,}", w["name"])}
-    for v in ctx["vendors"]:
-        words.add(v["name"].lower())
-    words.add(ctx["person"]["company"].lower().split()[0])
+        if isinstance(o, dict):
+            words |= {x.lower() for x in re.findall(r"[A-Za-z][A-Za-z0-9+.-]{4,}", _s(o.get("text")))}
+    for t in (ctx.get("tech") or []) + [x for w in ctx.get("works") or [] for x in w.get("tech") or []]:
+        if t:
+            words.add(_s(t).lower())
+    for w in ctx.get("works") or []:
+        words |= {x.lower() for x in re.findall(r"[A-Za-z][A-Za-z0-9+.-]{3,}", _s(w.get("name")))}
+    for v in ctx.get("vendors") or []:
+        if v.get("name"):
+            words.add(_s(v["name"]).lower())
+    company = _s(ctx["person"].get("company")).lower().split()
+    if company:
+        words.add(company[0])
     return {w for w in words if len(w) >= 3} - {"with", "from", "platform", "programme", "program", "project", "initiative", "rollout",
                                                  "their", "about", "which", "where", "there", "these", "joined", "years"}
 
@@ -660,11 +665,25 @@ _STOP = {"their", "about", "which", "where", "there", "these", "joined", "years"
 def _interest_terms(brief: dict | None) -> set[str]:
     """Distinctive words from their interests and hobbies (L1 openers and personality interests)."""
     words = set()
-    texts = [o.get("text", "") for o in (brief or {}).get("openers") or [] if o.get("level") == "L1"]
-    texts += [str(x.get("text", "") if isinstance(x, dict) else x) for x in ((brief or {}).get("personality") or {}).get("interests") or []]
+    texts = [_s(o.get("text")) for o in (brief or {}).get("openers") or [] if isinstance(o, dict) and o.get("level") == "L1"]
+    texts += [_s(x.get("text") if isinstance(x, dict) else x) for x in ((brief or {}).get("personality") or {}).get("interests") or []]
     for t in texts:
         words |= set(re.findall(r"[a-z][a-z0-9+-]{4,}", t.lower()))
     return words - _STOP
+
+
+def _s(x) -> str:
+    """Text from an AI field that may be missing (None), a number or a list."""
+    if x is None:
+        return ""
+    if isinstance(x, (list, tuple)):
+        return " ".join(_s(i) for i in x)
+    return str(x)
+
+
+def _clean_msgs(msgs) -> dict:
+    """Message dict with every value as text; a message the AI left empty becomes "" (and fails the 'is empty' check)."""
+    return {k: _s(v).strip() for k, v in (msgs or {}).items()} if isinstance(msgs, dict) else {}
 
 
 def _personal_terms(brief: dict | None) -> set[str]:
@@ -672,20 +691,23 @@ def _personal_terms(brief: dict | None) -> set[str]:
     stop = _STOP
     words = set()
     for o in (brief or {}).get("openers") or []:
-        words |= {w for w in re.findall(r"[a-z][a-z0-9+-]{4,}", o.get("text", "").lower())}
+        if isinstance(o, dict):
+            words |= {w for w in re.findall(r"[a-z][a-z0-9+-]{4,}", _s(o.get("text")).lower())}
     for x in ((brief or {}).get("personality") or {}).get("interests") or []:
-        words |= {w for w in re.findall(r"[a-z][a-z0-9+-]{4,}", str(x.get("text", "") if isinstance(x, dict) else x).lower())}
+        words |= {w for w in re.findall(r"[a-z][a-z0-9+-]{4,}", _s(x.get("text") if isinstance(x, dict) else x).lower())}
     return words - stop
 
 
 def _offering_names(profile: dict | None) -> list[str]:
-    return [o["name"] for o in (profile or {}).get("offerings", []) if len(o.get("name", "")) > 6]
+    return [_s(o.get("name")) for o in (profile or {}).get("offerings") or [] if isinstance(o, dict) and len(_s(o.get("name"))) > 6]
 
 
 def lint(msgs: dict, ctx: dict | None = None, seller: str = "", brief: dict | None = None,
          profile: dict | None = None) -> list[str]:
     """Hard checks the simulator might miss: length limits, banned phrases, placeholders, bland openings,
     and selling too early (seller/offering names or brochure stats in the first two messages)."""
+    msgs = _clean_msgs(msgs)
+    seller = seller or ""
     issues = []
     note = msgs.get("connection_note", "")
     m1 = msgs.get("message_1", "")
@@ -802,6 +824,8 @@ ask. Message 2's idea and 15-minute ask are about that use case; the full pitch 
 
 def lint_sequence(msgs: dict, seller: str = "", profile: dict | None = None) -> list[str]:
     """Message 2 and the full pitch: limits, no brochure, the right kind of ask."""
+    msgs = _clean_msgs(msgs)
+    seller = seller or ""
     issues = []
     for k, label, _, lim, _ in SEQUENCE:
         v = msgs.get(k, "")
@@ -879,9 +903,11 @@ def _goal_words(goal: dict) -> set[str]:
 def lint_goal(goal: dict, seq: dict, profile: dict | None = None) -> list[str]:
     """The conversation must lead somewhere specific: a named offering for a named use case at their company."""
     issues = []
-    if not goal.get("use_case") or not goal.get("offering"):
+    goal = goal if isinstance(goal, dict) else {}
+    seq = _clean_msgs(seq)
+    if not isinstance(goal.get("use_case"), str) or not isinstance(goal.get("offering"), str) or not goal["use_case"] or not goal["offering"]:
         return ["Decide the END GOAL first: which offering, for which of their initiatives (use_case)."]
-    names = [o["name"].lower() for o in (profile or {}).get("offerings", [])]
+    names = [_s(o.get("name")).lower() for o in (profile or {}).get("offerings") or [] if isinstance(o, dict) and o.get("name")]
     if names and goal["offering"].lower() not in names:
         issues.append(f"END GOAL offering '{goal['offering']}' is not one of the seller's offerings: pick one of {', '.join(names)}.")
     words = _goal_words(goal)

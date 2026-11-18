@@ -158,7 +158,7 @@ def _people(company: dict, p: dict) -> list[tuple[dict, str, float, str]]:
     if company.get("domain"):
         titles = list(dict.fromkeys((p.get("owner_titles") or []) + _delivery_titles(p)))
         for f in apollo.search_people(company["domain"], titles, per_page=15):
-            if f["full_name"].lower() in seen:
+            if not f.get("full_name") or f["full_name"].lower() in seen:
                 continue
             if _title_matches(f["title"], p.get("owner_titles") or []):
                 out.append(({**f, "source": "apollo"}, "Runs it", 0.7, f"Title matches who usually runs this engagement ({f['title']})."))

@@ -32,7 +32,7 @@ def snapshot(company_id: int) -> dict:
         vendors = [r["name"] for r in s.execute("SELECT name FROM vendor WHERE company_id=?", (company_id,))]
         jobs = _jobs_last_30d(s, company_id)
         had_run = s.execute("SELECT COUNT(*) n FROM run WHERE company_id=? AND status='done'", (company_id,)).fetchone()["n"] > 0
-    return {"initiatives": inits, "named": {p["full_name"].lower() for p in named}, "vendors": {v.lower() for v in vendors},
+    return {"initiatives": inits, "named": {p["full_name"].lower() for p in named if p["full_name"]}, "vendors": {v.lower() for v in vendors if v},
             "jobs": jobs, "had_run": had_run}
 
 

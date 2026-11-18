@@ -90,7 +90,7 @@ def _search_people(domain: str, titles: list[str], per_page: int) -> list[dict]:
     people = []
     for p in resp.json().get("people", []):
         last = p.get("last_name") or p.get("last_name_obfuscated") or ""
-        name = f"{p.get('first_name', '')} {last}".strip()
+        name = f"{p.get('first_name') or ''} {last}".strip()
         if not name:
             continue
         people.append(

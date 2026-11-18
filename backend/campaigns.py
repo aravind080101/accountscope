@@ -210,6 +210,8 @@ def find_companies(cid: int | None, region=None, days: int = 30, signals: list[s
         except Exception:
             continue
         for h in hits:
+            if not isinstance(h, dict) or not isinstance(h.get("name"), str) or not h["name"].strip():
+                continue   # the AI sometimes returns a company with no name
             k = h["name"].lower()
             if k in seen:
                 seen[k]["matched"].append(q)

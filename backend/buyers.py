@@ -159,7 +159,7 @@ def clean_openers(raw, n_sources: int) -> list[dict]:
     """Person signals for the connection note, strongest level first. Each must cite a source; private topics dropped."""
     out = []
     for o in raw if isinstance(raw, list) else []:
-        if not isinstance(o, dict) or o.get("level") not in OPENER_LEVELS or not o.get("text"):
+        if not isinstance(o, dict) or o.get("level") not in OPENER_LEVELS or not isinstance(o.get("text"), str) or not o["text"].strip():
             continue
         if not isinstance(o.get("source"), int) or not 0 <= o["source"] < n_sources:
             continue
@@ -194,7 +194,8 @@ def gather(name: str, company: str, title: str, domain: str | None = None) -> li
     """Public pages by or about this person, from many kinds of source, each tagged with its family and voice value."""
     aliases = company_aliases(company, title)
     queries = search_plan(name, company, title, domain)
-    full = " ".join(name.lower().split())
+    full = " ".join((name or "").lower().split())
+    aliases = [a for a in aliases if isinstance(a, str) and a.strip()]
     marks = {a.lower() for a in aliases} | {a.lower().split()[0] for a in aliases}
     if domain:
         marks.add(domain.split(".")[0].lower())
@@ -208,7 +209,7 @@ def gather(name: str, company: str, title: str, domain: str | None = None) -> li
         except Exception:
             continue
         for r in results:
-            blob = " ".join((r["text"] + " " + r["title"]).lower().split())
+            blob = " ".join(((r.get("text") or "") + " " + (r.get("title") or "")).lower().split())
             # same person: full name, plus any name their employer goes by (personal pages may omit it)
             on_own_site = bool(domain and domain in r["url"])
             if r["url"] in seen or full not in blob or (not any(m in blob for m in marks) and not on_own_site

@@ -170,7 +170,9 @@ Every candidate number must appear in exactly one initiative's members."""
         }
         seen = set()
         for g in group:
-            for person in g.get("people", []):
+            for person in g.get("people") or []:
+                if not isinstance(person, dict) or not isinstance(person.get("name"), str) or not person["name"].strip():
+                    continue
                 if person["name"].lower() not in seen:
                     seen.add(person["name"].lower())
                     merged["people"].append(person)
@@ -312,8 +314,9 @@ def cluster(cands: list[dict]) -> list[dict]:
             match["stage"] = c["stage"]
         match["tech"] = _clean_list(list(match.get("tech") or []) + list(c.get("tech") or []))
         match["evidence"] += c.get("evidence", [])
-        known = {p["name"].lower() for p in match["people"]}
-        match["people"] += [p for p in c.get("people", []) if p["name"].lower() not in known]
+        known = {(p.get("name") or "").lower() for p in match["people"]}
+        match["people"] += [p for p in c.get("people") or [] if isinstance(p, dict) and isinstance(p.get("name"), str)
+                            and p["name"].strip() and p["name"].lower() not in known]
     return merged
 
 
@@ -413,7 +416,8 @@ def candidate_people(company: dict, init: dict, profile: dict, fb: dict | None =
                      named_pool: list[dict] | None = None) -> list[dict]:
     """People named in this initiative's evidence; leaders named elsewhere in the sources whose title fits it;
     and title-matched people from the people database."""
-    people = [{**p, "full_name": p["name"], "source": "evidence"} for p in init.get("people", [])]
+    people = [{**p, "full_name": p["name"].strip(), "source": "evidence"} for p in init.get("people") or []
+              if isinstance(p, dict) and isinstance(p.get("name"), str) and p["name"].strip()]
     named = {p["full_name"].lower() for p in people}
     for p in named_pool or []:  # e.g. the CIO quoted in an unrelated article, for a digital-banking rollout
         nm = (p.get("name") or p.get("full_name") or "").strip()
@@ -427,6 +431,8 @@ def candidate_people(company: dict, init: dict, profile: dict, fb: dict | None =
     found = apollo.search_people(company.get("domain") or "", titles, per_page=15)
     source = "apollo"
     for f in found:
+        if not f.get("full_name"):
+            continue
         if f["full_name"].lower() in named:
             for p in people:  # fill in details for people already named in the evidence
                 if p["full_name"].lower() == f["full_name"].lower():

@@ -83,9 +83,9 @@ def search(company: str, domain: str | None = None) -> list[dict]:
 
     def add(source_type: str, results: list[dict], check_name: bool = True):
         for r in results:
-            if r["url"] in seen or len(r["text"]) < 120:
+            if r["url"] in seen or len(r.get("text") or "") < 120:
                 continue
-            if check_name and first_word not in (r["text"] + r["title"]).lower():
+            if check_name and first_word not in ((r.get("text") or "") + (r.get("title") or "")).lower():
                 continue  # result doesn't mention the company
             seen.add(r["url"])
             out.append({"source_type": source_type, **r})

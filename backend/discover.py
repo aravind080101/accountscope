@@ -145,7 +145,7 @@ def browse(keywords: str | None, location=None, size: str | None = None, page: i
     )
     existing = _existing_accounts()
     for c in data["companies"]:
-        c["account_id"] = existing.get(c["name"].lower())
+        c["account_id"] = existing.get((c.get("name") or "").lower())
     return data
 
 
